@@ -1,0 +1,53 @@
+<form method="post" action="/routines" id="routine-form">
+{% if let Some(message) = error %}
+<p class="error">{{ message }}</p>
+{% endif %}
+<div class="field">
+<label for="routine-title">title</label>
+<input id="routine-title" name="title" maxlength="200" required>
+</div>
+<div class="field">
+<label for="routine-notes">notes</label>
+<textarea id="routine-notes" name="notes"></textarea>
+</div>
+<fieldset>
+<legend>kind</legend>
+<label><input type="radio" name="kind" value="weekdays" checked> weekdays</label>
+<label><input type="radio" name="kind" value="count"> count</label>
+</fieldset>
+<fieldset>
+<legend>weekdays</legend>
+<label><input type="checkbox" name="monday"> mon</label>
+<label><input type="checkbox" name="tuesday"> tue</label>
+<label><input type="checkbox" name="wednesday"> wed</label>
+<label><input type="checkbox" name="thursday"> thu</label>
+<label><input type="checkbox" name="friday"> fri</label>
+<label><input type="checkbox" name="saturday"> sat</label>
+<label><input type="checkbox" name="sunday"> sun</label>
+</fieldset>
+<fieldset>
+<legend>count</legend>
+<label>per period <input type="number" name="per_period" min="1"></label>
+<label>period
+<select name="period">
+<option value=""></option>
+<option value="day">day</option>
+<option value="week">week</option>
+<option value="month">month</option>
+<option value="year">year</option>
+</select>
+</label>
+</fieldset>
+<fieldset>
+<legend>duration</legend>
+<label><input type="radio" name="duration" value="forever" checked> forever</label>
+<label><input type="radio" name="duration" value="iterations"> iterations <input type="number" name="iterations" min="1"></label>
+<label><input type="radio" name="duration" value="end_date"> until <input type="date" name="end_date"></label>
+</fieldset>
+<fieldset>
+<legend>time</legend>
+<label>time of day <input type="time" name="time_of_day"></label>
+<label>time end <input type="time" name="time_end"></label>
+</fieldset>
+<button type="submit">create routine</button>
+</form>

@@ -1,0 +1,11 @@
+<div id="pin-occ-{{ occurrence_id }}" class="pin">
+<p>{{ pin.summary }}</p>
+<ul>
+{% for link in pin.links %}
+<li><a href="{{ link }}">{{ link }}</a></li>
+{% endfor %}
+</ul>
+{% for photo in pin.photos %}
+<img src="{{ photo }}" alt="photo">
+{% endfor %}
+</div>

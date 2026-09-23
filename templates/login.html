@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}login{% endblock %}
+{% block content %}
+<div class="card narrow">
+<h1>login</h1>
+{% match error %}
+{% when Some with (message) %}
+<p class="error">{{ message }}</p>
+{% when None %}
+{% endmatch %}
+<form method="post" action="/login">
+<div class="field">
+<label for="login-username">username</label>
+<input id="login-username" name="username" required>
+</div>
+<div class="field">
+<label for="login-password">password</label>
+<input id="login-password" type="password" name="password" required>
+</div>
+<button type="submit">log in</button>
+</form>
+<p><a href="/signup">signup</a></p>
+</div>
+{% endblock %}

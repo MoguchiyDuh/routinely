@@ -1,0 +1,24 @@
+<section id="todos" class="card">
+<h2>todos</h2>
+<form method="post" action="/todos?date={{ date }}" hx-post="/todos?date={{ date }}" hx-target="#todos" hx-swap="outerHTML" class="catalog-form">
+<input name="title" placeholder="title" maxlength="200" required>
+<input name="notes" placeholder="notes">
+<input type="datetime-local" name="deadline">
+<button type="submit">add todo</button>
+</form>
+<ul class="todo-list">
+{% for t in todos %}
+<li id="todo-{{ t.id }}" class="todo{% if t.overdue %} overdue{% endif %}{% if t.done %} done{% endif %}">
+<span>{{ t.title }}</span>
+{% if let Some(notes) = t.notes %}
+<p>{{ notes }}</p>
+{% endif %}
+{% if let Some(deadline) = t.deadline %}
+<p>{{ deadline }}</p>
+{% endif %}
+<button class="ghost" hx-post="/todos/{{ t.id }}/toggle?date={{ date }}" hx-target="#todos" hx-swap="outerHTML">{% if t.done %}undone{% else %}done{% endif %}</button>
+<button class="ghost" hx-delete="/todos/{{ t.id }}?date={{ date }}" hx-target="#todos" hx-swap="outerHTML">delete</button>
+</li>
+{% endfor %}
+</ul>
+</section>

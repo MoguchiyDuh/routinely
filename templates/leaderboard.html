@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}leaderboard{% endblock %}
+{% block content %}
+<h1>leaderboard</h1>
+<div class="card table-card">
+<table>
+<thead>
+<tr><th>rank</th><th>user</th><th>7d</th><th>30d</th><th>streak (days)</th><th>pending</th></tr>
+</thead>
+<tbody>
+{% for row in rows %}
+<tr>
+<td class="rank">{{ row.rank }}</td>
+<td><a href="/users/{{ row.user_id }}">{{ row.username }}</a></td>
+<td>{{ row.pct_7d }}</td>
+<td>{{ row.pct_30d }}</td>
+<td>{{ row.streak }}</td>
+<td>{{ row.pending }}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% endblock %}

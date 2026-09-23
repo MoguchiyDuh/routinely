@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}routinely{% endblock %}</title>
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/htmx.min.js" defer></script>
+</head>
+<body>
+<nav class="topnav">
+<a href="/" class="brand">routinely</a>
+<a href="/">day</a>
+<a href="/week">week</a>
+<a href="/routines/new">new routine</a>
+<a href="/leaderboard">leaderboard</a>
+<a href="/punishments">punishments{% if pending_count > 0 %} <span class="badge">{{ pending_count }}</span>{% endif %}</a>
+<span class="nav-spacer"></span>
+{% match nav_user_id %}
+{% when Some with (nav_id) %}
+<a href="/users/{{ nav_id }}" class="user-badge">{{ nav_username }}</a>
+{% when None %}
+{% endmatch %}
+<form method="post" action="/logout" class="nav-form"><button type="submit" class="ghost">logout</button></form>
+</nav>
+<main>
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}punishments{% endblock %}
+{% block content %}
+<h1>punishments</h1>
+<section id="queue" class="card">
+<h2>queue</h2>
+{% if pending.is_empty() %}
+<p class="empty">nothing pending</p>
+{% endif %}
+{% for p in pending %}
+<div class="punishment pending">
+<span class="title">{{ p.title }}</span>
+<span class="source">{{ p.source }}</span>
+{% if let Some(desc) = p.description %}<span class="desc">{{ desc }}</span>{% endif %}
+<form method="post" action="/punishments/{{ p.id }}/clear" class="compact"><button type="submit">clear</button></form>
+<form method="post" action="/punishments/{{ p.id }}/waive" class="compact"><button type="submit">waive</button></form>
+</div>
+{% endfor %}
+</section>
+<section id="history" class="card">
+<h2>history</h2>
+{% if history.is_empty() %}
+<p class="empty">no history yet</p>
+{% endif %}
+{% for p in history %}
+<div class="punishment done">
+<span class="title">{{ p.title }}</span>
+<span class="status-text">{{ p.status }}</span>
+{% if let Some(ts) = p.cleared_at %}<span class="cleared">{{ ts }}</span>{% endif %}
+</div>
+{% endfor %}
+</section>
+<section id="catalog" class="card">
+<h2>catalog</h2>
+<form method="post" action="/catalog" class="catalog-form">
+<input type="text" name="title" placeholder="title" maxlength="200">
+<input type="text" name="description" placeholder="description">
+<button type="submit">add punishment idea</button>
+</form>
+{% for c in catalog %}
+<div class="catalog-item">
+<span class="title">{{ c.title }}</span>
+{% if let Some(desc) = c.description %}<span class="desc">{{ desc }}</span>{% endif %}
+{% if c.active %}
+<form method="post" action="/catalog/{{ c.id }}/deactivate" class="compact"><button type="submit" class="ghost">deactivate</button></form>
+{% else %}
+<form method="post" action="/catalog/{{ c.id }}/activate" class="compact"><button type="submit">activate</button></form>
+{% endif %}
+</div>
+{% endfor %}
+</section>
+<section id="assign" class="card">
+<h2>assign punishment</h2>
+<form method="post" action="/users/0/punishments" onsubmit="this.action = '/users/' + this.user_id.value + '/punishments'" class="catalog-form">
+<input type="number" name="user_id" placeholder="assignee user id" required>
+<select name="catalog_id">
+<option value="">custom</option>
+{% for c in catalog %}{% if c.active %}<option value="{{ c.id }}">{{ c.title }}</option>{% endif %}{% endfor %}
+</select>
+<input type="text" name="custom_title" placeholder="custom title" maxlength="200">
+<button type="submit">punish</button>
+</form>
+</section>
+{% endblock %}

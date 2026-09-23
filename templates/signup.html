@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}signup{% endblock %}
+{% block content %}
+<div class="card narrow">
+<h1>signup</h1>
+{% match error %}
+{% when Some with (message) %}
+<p class="error">{{ message }}</p>
+{% when None %}
+{% endmatch %}
+<form method="post" action="/signup">
+<div class="field">
+<label for="signup-code">signup code</label>
+<input id="signup-code" name="code" required>
+</div>
+<div class="field">
+<label for="signup-username">username</label>
+<input id="signup-username" name="username" required>
+</div>
+<div class="field">
+<label for="signup-password">password</label>
+<input id="signup-password" type="password" name="password" required>
+</div>
+<input type="hidden" name="timezone" id="timezone-field">
+<button type="submit">sign up</button>
+</form>
+<p><a href="/login">login</a></p>
+</div>
+<script>
+(function () {
+    var field = document.getElementById("timezone-field");
+    if (!field) {
+        return;
+    }
+    try {
+        var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (tz) {
+            field.value = tz;
+        }
+    } catch (err) {
+        return;
+    }
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,27 @@
+{% match entry %}
+{% when WeekEntry::Occurrence with (e) %}
+<div class="entry occurrence status-{{ e.status }}">
+<span>{{ e.title }}</span>
+<span class="user">({{ e.username }})</span>
+{% if e.planned %}<span class="planned">planned</span>{% endif %}
+{% if let Some(label) = e.time_label %}
+<span class="time">{{ label }}</span>
+{% endif %}
+<span class="status">{{ e.status }}</span>
+{% if let Some(pin) = e.pin %}
+{% if let Some(oid) = e.occurrence_id %}
+<span id="pin-occ-{{ oid }}"><button hx-get="/occurrences/{{ oid }}/pin" hx-target="#pin-occ-{{ oid }}" hx-swap="outerHTML">pin</button></span>
+{% endif %}
+{% endif %}
+</div>
+{% when WeekEntry::Period with (p) %}
+<div class="entry period">
+<span>{{ p.title }} &mdash; {{ p.done }}/{{ p.required }} per period</span>
+<span class="user">({{ p.username }})</span>
+</div>
+{% when WeekEntry::Todo with (t) %}
+<div class="entry todo{% if t.overdue %} overdue{% endif %}{% if t.completed %} done{% endif %}">
+<span>{{ t.title }} @{{ t.local_time }} ({{ t.username }})</span>
+{% if t.overdue %}<span class="badge">overdue</span>{% endif %}
+</div>
+{% endmatch %}

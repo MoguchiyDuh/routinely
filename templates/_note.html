@@ -1,0 +1,7 @@
+<section id="note" class="card">
+<h2>note</h2>
+<form method="post" action="/notes/{{ date }}" hx-post="/notes/{{ date }}" hx-target="#note" hx-swap="outerHTML">
+<textarea name="body" rows="6">{% if let Some(text) = body %}{{ text }}{% endif %}</textarea>
+<button type="submit">save note</button>
+</form>
+</section>
