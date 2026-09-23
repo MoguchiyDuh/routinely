@@ -52,6 +52,21 @@ pub struct PunishmentItem {
     pub cleared_at: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct PunishmentDetail {
+    pub id: i64,
+    pub user_id: i64,
+    pub username: String,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub source: String,
+    pub status: String,
+    pub assigned_at: String,
+    pub cleared_at: Option<String>,
+    pub missed_routine: Option<String>,
+    pub missed_date: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PunishOutcome {
     Done,
@@ -78,6 +93,20 @@ type PunishRecord = (
     Option<String>,
 );
 
+type PunishDetailRecord = (
+    i64,
+    i64,
+    String,
+    Option<String>,
+    Option<String>,
+    String,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
+
 fn catalog_from_row(row: CatalogRecord) -> CatalogItem {
     return CatalogItem {
         id: row.0,
@@ -99,6 +128,22 @@ fn punishment_from_row(row: PunishRecord) -> PunishmentItem {
         status: row.5,
         assigned_at: row.6,
         cleared_at: row.7,
+    };
+}
+
+fn detail_from_row(row: PunishDetailRecord) -> PunishmentDetail {
+    return PunishmentDetail {
+        id: row.0,
+        user_id: row.1,
+        username: row.2,
+        title: row.3,
+        description: row.4,
+        source: row.5,
+        status: row.6,
+        assigned_at: row.7,
+        cleared_at: row.8,
+        missed_routine: row.9,
+        missed_date: row.10,
     };
 }
 
@@ -312,6 +357,50 @@ pub async fn list_punishments(
         }
     };
     return Ok(rows.into_iter().map(punishment_from_row).collect());
+}
+
+pub async fn list_user_details(
+    pool: &SqlitePool,
+    user_id: i64,
+) -> Result<Vec<PunishmentDetail>, sqlx::Error> {
+    let rows: Vec<PunishDetailRecord> = sqlx::query_as(
+        "SELECT p.id, p.user_id, u.username, COALESCE(c.title, p.custom_title), c.description, p.source, p.status, p.assigned_at, p.cleared_at, r.title, o.due_date \
+         FROM punishments p \
+         JOIN users u ON u.id = p.user_id \
+         LEFT JOIN punishment_catalog c ON c.id = p.catalog_id \
+         LEFT JOIN occurrences o ON o.id = p.occurrence_id \
+         LEFT JOIN routines r ON r.id = o.routine_id \
+         WHERE p.user_id = ? \
+         ORDER BY p.assigned_at ASC, p.id ASC",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+    return Ok(rows.into_iter().map(detail_from_row).collect());
+}
+
+pub async fn list_pending_details(pool: &SqlitePool) -> Result<Vec<PunishmentDetail>, sqlx::Error> {
+    let rows: Vec<PunishDetailRecord> = sqlx::query_as(
+        "SELECT p.id, p.user_id, u.username, COALESCE(c.title, p.custom_title), c.description, p.source, p.status, p.assigned_at, p.cleared_at, r.title, o.due_date \
+         FROM punishments p \
+         JOIN users u ON u.id = p.user_id \
+         LEFT JOIN punishment_catalog c ON c.id = p.catalog_id \
+         LEFT JOIN occurrences o ON o.id = p.occurrence_id \
+         LEFT JOIN routines r ON r.id = o.routine_id \
+         WHERE p.status = 'pending' \
+         ORDER BY u.username COLLATE NOCASE ASC, p.assigned_at ASC, p.id ASC",
+    )
+    .fetch_all(pool)
+    .await?;
+    return Ok(rows.into_iter().map(detail_from_row).collect());
+}
+
+pub async fn list_members(pool: &SqlitePool) -> Result<Vec<(i64, String)>, sqlx::Error> {
+    let rows: Vec<(i64, String)> =
+        sqlx::query_as("SELECT id, username FROM users ORDER BY username COLLATE NOCASE ASC")
+            .fetch_all(pool)
+            .await?;
+    return Ok(rows);
 }
 
 pub async fn evaluate_user(

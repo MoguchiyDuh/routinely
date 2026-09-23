@@ -144,7 +144,7 @@ pub fn flash_clear_cookie() -> String {
     return format!("{FLASH_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
 }
 
-pub fn redirect_with_flash(target: &'static str, message: &'static str, secure: bool) -> Response {
+pub fn redirect_with_flash(target: &str, message: &str, secure: bool) -> Response {
     let mut response = Redirect::to(target).into_response();
     if let Ok(value) = HeaderValue::from_str(&flash_cookie(message, secure)) {
         response.headers_mut().append(header::SET_COOKIE, value);

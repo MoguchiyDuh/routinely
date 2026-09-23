@@ -816,6 +816,12 @@ async fn punishment_routes_require_auth() {
     let page = request(server.addr, "GET", "/punishments", &[], b"").await;
     assert_eq!(page.status, 303, "SSR queue must redirect unauth users");
     assert_eq!(page.header("location").as_deref(), Some("/login"));
+    let assign_pick = request(server.addr, "POST", "/punishments/assign", &[], b"").await;
+    assert_eq!(
+        assign_pick.status, 303,
+        "SSR assign must redirect unauth users"
+    );
+    assert_eq!(assign_pick.header("location").as_deref(), Some("/login"));
     let list = request(server.addr, "GET", "/api/v1/punishments", &[], b"").await;
     assert_eq!(list.status, 401);
     let catalog = request(server.addr, "GET", "/api/v1/catalog", &[], b"").await;
@@ -861,7 +867,7 @@ async fn punishment_routes_require_auth() {
 }
 
 #[tokio::test]
-async fn punishments_page_renders_queue_and_catalog() {
+async fn punishments_page_renders_tabs_queue_and_catalog() {
     let server = setup("page").await;
     let token = signup_user(&server, "lena").await;
     let target = user_id(&server, &token).await;
@@ -889,21 +895,400 @@ async fn punishments_page_renders_queue_and_catalog() {
         "queue must render: {}",
         page.body
     );
-    assert!(page.body.contains("catalog"), "catalog section must render");
-    assert!(page.body.contains("20 pushups"), "seeded items must render");
+    assert!(
+        page.body
+            .contains(r#"href="/punishments?tab=mine" aria-current="page""#),
+        "mine tab must be active: {}",
+        page.body
+    );
     assert!(
         page.body.contains(r#"class="nav-badge""#),
         "pending badge must render: {}",
         page.body
+    );
+    let catalog = request(
+        server.addr,
+        "GET",
+        "/punishments?tab=catalog",
+        &[("Cookie", cookie.as_str())],
+        b"",
+    )
+    .await;
+    assert_eq!(catalog.status, 200, "catalog tab failed: {catalog:?}");
+    assert!(
+        catalog
+            .body
+            .contains(r#"href="/punishments?tab=catalog" aria-current="page""#),
+        "catalog tab must be active: {}",
+        catalog.body
+    );
+    assert!(
+        catalog.body.contains("20 pushups"),
+        "seeded items must render: {}",
+        catalog.body
     );
     let id = assign.json()["id"].as_i64().unwrap();
     let clear = request(
         server.addr,
         "POST",
         &format!("/punishments/{id}/clear"),
+        &[
+            ("Cookie", cookie.as_str()),
+            ("Content-Type", "application/x-www-form-urlencoded"),
+        ],
+        b"tab=mine",
+    )
+    .await;
+    assert_eq!(clear.status, 303, "SSR clear must redirect");
+    assert_eq!(
+        clear.header("location").as_deref(),
+        Some("/punishments?tab=mine"),
+        "SSR clear must land back on the mine tab"
+    );
+}
+
+#[tokio::test]
+async fn tab_param_selects_tab_content() {
+    let server = setup("tabs").await;
+    let alice = signup_user(&server, "tabalice").await;
+    let alice_id = user_id(&server, &alice).await;
+    let bob = signup_user(&server, "tabbob").await;
+    let bob_id = user_id(&server, &bob).await;
+    let assign_bob = json_call(
+        &server,
+        "POST",
+        &format!("/api/v1/users/{bob_id}/punishments"),
+        &alice,
+        serde_json::json!({ "custom_title": "bob chore" }),
+    )
+    .await;
+    assert_eq!(
+        assign_bob.status, 200,
+        "assign to bob failed: {assign_bob:?}"
+    );
+    let assign_self = json_call(
+        &server,
+        "POST",
+        &format!("/api/v1/users/{alice_id}/punishments"),
+        &alice,
+        serde_json::json!({ "custom_title": "alice chore" }),
+    )
+    .await;
+    assert_eq!(
+        assign_self.status, 200,
+        "assign to self failed: {assign_self:?}"
+    );
+    let cookie = format!("session={alice}");
+    let mine = request(
+        server.addr,
+        "GET",
+        "/punishments?tab=mine",
         &[("Cookie", cookie.as_str())],
         b"",
     )
     .await;
-    assert_eq!(clear.status, 303, "SSR clear must redirect");
+    assert_eq!(mine.status, 200);
+    assert!(
+        mine.body.contains("alice chore"),
+        "mine tab must show own pending: {}",
+        mine.body
+    );
+    assert!(
+        !mine.body.contains("bob chore"),
+        "mine tab must not show other users' pending: {}",
+        mine.body
+    );
+    let everyone = request(
+        server.addr,
+        "GET",
+        "/punishments?tab=everyone",
+        &[("Cookie", cookie.as_str())],
+        b"",
+    )
+    .await;
+    assert_eq!(everyone.status, 200);
+    assert!(
+        everyone.body.contains("tabbob"),
+        "everyone tab must show usernames: {}",
+        everyone.body
+    );
+    assert!(
+        everyone.body.contains("bob chore"),
+        "everyone tab must show other users' pending: {}",
+        everyone.body
+    );
+    assert!(
+        everyone.body.contains("alice chore"),
+        "everyone tab must show own pending group: {}",
+        everyone.body
+    );
+    assert!(
+        everyone.body.contains(r#"/punishments/assign"#),
+        "everyone tab must render the assign form: {}",
+        everyone.body
+    );
+    let catalog = request(
+        server.addr,
+        "GET",
+        "/punishments?tab=catalog",
+        &[("Cookie", cookie.as_str())],
+        b"",
+    )
+    .await;
+    assert_eq!(catalog.status, 200);
+    assert!(
+        catalog.body.contains("20 pushups"),
+        "catalog tab must show items: {}",
+        catalog.body
+    );
+    assert!(
+        !catalog.body.contains("bob chore"),
+        "catalog tab must not show penalties: {}",
+        catalog.body
+    );
+    let unknown = request(
+        server.addr,
+        "GET",
+        "/punishments?tab=bogus",
+        &[("Cookie", cookie.as_str())],
+        b"",
+    )
+    .await;
+    assert_eq!(unknown.status, 200);
+    assert!(
+        unknown.body.contains("alice chore"),
+        "unknown tab must fall back to mine: {}",
+        unknown.body
+    );
+    assert!(
+        !unknown.body.contains("bob chore"),
+        "unknown tab must fall back to mine: {}",
+        unknown.body
+    );
+}
+
+#[tokio::test]
+async fn ssr_assign_creates_manual_penalty_and_redirects_to_everyone() {
+    let server = setup("ssr-assign").await;
+    let alice = signup_user(&server, "assigner").await;
+    let bob = signup_user(&server, "assignee").await;
+    let bob_id = user_id(&server, &bob).await;
+    let ids = catalog_ids(&server).await;
+    let cookie = format!("session={alice}");
+    let response = request(
+        server.addr,
+        "POST",
+        "/punishments/assign",
+        &[
+            ("Cookie", cookie.as_str()),
+            ("Content-Type", "application/x-www-form-urlencoded"),
+        ],
+        format!("user_id={bob_id}&custom_title=mow%20the%20lawn&tab=everyone").as_bytes(),
+    )
+    .await;
+    assert_eq!(response.status, 303, "assign must redirect: {response:?}");
+    assert_eq!(
+        response.header("location").as_deref(),
+        Some("/punishments?tab=everyone"),
+        "assign must land on the everyone tab"
+    );
+    let flash = response.header("set-cookie").unwrap_or_default();
+    assert!(
+        flash.contains("Penalty%20assigned"),
+        "flash must say the penalty was assigned: {flash}"
+    );
+    let by_catalog = request(
+        server.addr,
+        "POST",
+        "/punishments/assign",
+        &[
+            ("Cookie", cookie.as_str()),
+            ("Content-Type", "application/x-www-form-urlencoded"),
+        ],
+        format!("user_id={bob_id}&catalog_id={}&tab=everyone", ids[0]).as_bytes(),
+    )
+    .await;
+    assert_eq!(
+        by_catalog.status, 303,
+        "catalog assign failed: {by_catalog:?}"
+    );
+    let rows: Vec<(i64, String, String)> = sqlx::query_as(
+        "SELECT user_id, source, status FROM punishments WHERE custom_title = 'mow the lawn'",
+    )
+    .fetch_all(&server.pool)
+    .await
+    .unwrap();
+    assert_eq!(rows.len(), 1, "custom assign must insert exactly one row");
+    assert_eq!(
+        rows[0].0, bob_id,
+        "penalty must belong to the selected user"
+    );
+    assert_eq!(rows[0].1, "manual", "ssr assign must be manual");
+    assert_eq!(rows[0].2, "pending", "ssr assign must be pending");
+    let catalog_rows: Vec<(Option<i64>,)> = sqlx::query_as(
+        "SELECT catalog_id FROM punishments WHERE user_id = ? AND catalog_id IS NOT NULL",
+    )
+    .bind(bob_id)
+    .fetch_all(&server.pool)
+    .await
+    .unwrap();
+    assert_eq!(catalog_rows.len(), 1, "catalog assign must insert one row");
+    assert_eq!(catalog_rows[0].0, Some(ids[0]));
+}
+
+#[tokio::test]
+async fn ssr_assign_validation_renders_errors_without_inserting() {
+    let server = setup("ssr-assign-invalid").await;
+    let alice = signup_user(&server, "validator").await;
+    let bob = signup_user(&server, "targetuser").await;
+    let bob_id = user_id(&server, &bob).await;
+    let ids = catalog_ids(&server).await;
+    let cookie = format!("session={alice}");
+    let headers = [
+        ("Cookie", cookie.as_str()),
+        ("Content-Type", "application/x-www-form-urlencoded"),
+    ];
+    let both = request(
+        server.addr,
+        "POST",
+        "/punishments/assign",
+        &headers,
+        format!(
+            "user_id={bob_id}&catalog_id={}&custom_title=both&tab=everyone",
+            ids[0]
+        )
+        .as_bytes(),
+    )
+    .await;
+    assert_eq!(
+        both.status, 422,
+        "both fields must render an error: {both:?}"
+    );
+    assert!(
+        both.body
+            .contains("Pick a catalog item or enter a custom title"),
+        "error message must render: {}",
+        both.body
+    );
+    let neither = request(
+        server.addr,
+        "POST",
+        "/punishments/assign",
+        &headers,
+        format!("user_id={bob_id}&tab=everyone").as_bytes(),
+    )
+    .await;
+    assert_eq!(
+        neither.status, 422,
+        "neither field must render an error: {neither:?}"
+    );
+    assert!(
+        neither
+            .body
+            .contains("Pick a catalog item or enter a custom title"),
+        "error message must render: {}",
+        neither.body
+    );
+    let ghost = request(
+        server.addr,
+        "POST",
+        "/punishments/assign",
+        &headers,
+        b"user_id=99999&custom_title=ghost&tab=everyone",
+    )
+    .await;
+    assert_eq!(
+        ghost.status, 422,
+        "unknown user must render an error: {ghost:?}"
+    );
+    assert!(
+        ghost.body.contains("Choose a member"),
+        "member error must render: {}",
+        ghost.body
+    );
+    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM punishments")
+        .fetch_one(&server.pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0, "invalid submissions must not create punishments");
+}
+
+#[tokio::test]
+async fn ssr_clear_and_waive_redirect_to_origin_tab_with_new_flash() {
+    let server = setup("ssr-close").await;
+    let token = signup_user(&server, "closer").await;
+    let target = user_id(&server, &token).await;
+    let assign = json_call(
+        &server,
+        "POST",
+        &format!("/api/v1/users/{target}/punishments"),
+        &token,
+        serde_json::json!({ "custom_title": "dust the shelf" }),
+    )
+    .await;
+    assert_eq!(assign.status, 200);
+    let assign2 = json_call(
+        &server,
+        "POST",
+        &format!("/api/v1/users/{target}/punishments"),
+        &token,
+        serde_json::json!({ "custom_title": "sweep the porch" }),
+    )
+    .await;
+    assert_eq!(assign2.status, 200);
+    let id = assign.json()["id"].as_i64().unwrap();
+    let id2 = assign2.json()["id"].as_i64().unwrap();
+    let cookie = format!("session={token}");
+    let headers = [
+        ("Cookie", cookie.as_str()),
+        ("Content-Type", "application/x-www-form-urlencoded"),
+    ];
+    let clear = request(
+        server.addr,
+        "POST",
+        &format!("/punishments/{id}/clear"),
+        &headers,
+        b"tab=mine",
+    )
+    .await;
+    assert_eq!(clear.status, 303, "clear failed: {clear:?}");
+    assert_eq!(
+        clear.header("location").as_deref(),
+        Some("/punishments?tab=mine")
+    );
+    let flash = clear.header("set-cookie").unwrap_or_default();
+    assert!(
+        flash.contains("Penalty%20cleared"),
+        "flash must say the penalty was cleared: {flash}"
+    );
+    let waive = request(
+        server.addr,
+        "POST",
+        &format!("/punishments/{id2}/waive"),
+        &headers,
+        b"tab=everyone",
+    )
+    .await;
+    assert_eq!(waive.status, 303, "waive failed: {waive:?}");
+    assert_eq!(
+        waive.header("location").as_deref(),
+        Some("/punishments?tab=everyone")
+    );
+    let flash = waive.header("set-cookie").unwrap_or_default();
+    assert!(
+        flash.contains("Penalty%20waived"),
+        "flash must say the penalty was waived: {flash}"
+    );
+    let (status,): (String,) = sqlx::query_as("SELECT status FROM punishments WHERE id = ?")
+        .bind(id)
+        .fetch_one(&server.pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "cleared");
+    let (status,): (String,) = sqlx::query_as("SELECT status FROM punishments WHERE id = ?")
+        .bind(id2)
+        .fetch_one(&server.pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "waived");
 }

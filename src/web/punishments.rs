@@ -4,6 +4,7 @@ use axum::Router;
 use axum::extract::Path;
 use axum::extract::Query;
 use axum::extract::State;
+use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::response::Response;
 use axum::routing::get;
@@ -14,9 +15,11 @@ use serde_json::Value;
 use crate::app::AppState;
 use crate::auth::extract::ApiAuth;
 use crate::auth::extract::PageAuth;
+use crate::auth::session::SessionUser;
 use crate::punish;
 use crate::punish::AssignTarget;
 
+use super::AvatarVm;
 use super::WebError;
 use super::WebResult;
 use super::html;
@@ -26,18 +29,43 @@ use super::shell::Shell;
 #[template(path = "punishments.html")]
 pub struct PunishmentsPage {
     pub shell: Shell,
-    pending: Vec<PunishVm>,
-    history: Vec<PunishVm>,
+    tab: &'static str,
+    pending: Vec<PenaltyVm>,
+    history: Vec<HistoryVm>,
+    everyone: Vec<GroupVm>,
+    members: Vec<MemberVm>,
     catalog: Vec<CatalogVm>,
+    assign_error: Option<&'static str>,
 }
 
-pub(crate) struct PunishVm {
+pub(crate) struct PenaltyVm {
     pub id: i64,
     pub title: String,
     pub description: Option<String>,
-    pub source: String,
-    pub status: String,
-    pub cleared_at: Option<String>,
+    pub source_label: String,
+    pub assigned_date: String,
+}
+
+pub(crate) struct HistoryVm {
+    pub title: String,
+    pub pill_class: &'static str,
+    pub pill_word: &'static str,
+    pub pill_icon: &'static str,
+    pub date: String,
+}
+
+pub(crate) struct GroupVm {
+    pub user_id: i64,
+    pub username: String,
+    pub avatar: AvatarVm,
+    pub count: u64,
+    pub is_self: bool,
+    pub items: Vec<PenaltyVm>,
+}
+
+pub(crate) struct MemberVm {
+    pub id: i64,
+    pub username: String,
 }
 
 pub(crate) struct CatalogVm {
@@ -48,9 +76,15 @@ pub(crate) struct CatalogVm {
 }
 
 #[derive(Debug, Deserialize)]
+struct PageQuery {
+    tab: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 struct CatalogFormPayload {
     title: Option<String>,
     description: Option<String>,
+    tab: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -60,7 +94,13 @@ struct CatalogJsonPayload {
 }
 
 #[derive(Debug, Deserialize)]
+struct TabForm {
+    tab: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 struct AssignFormPayload {
+    tab: Option<String>,
     catalog_id: Option<String>,
     custom_title: Option<String>,
 }
@@ -72,6 +112,14 @@ struct AssignJsonPayload {
 }
 
 #[derive(Debug, Deserialize)]
+struct AssignPickForm {
+    user_id: Option<String>,
+    catalog_id: Option<String>,
+    custom_title: Option<String>,
+    tab: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 struct PunishListQuery {
     status: Option<String>,
 }
@@ -79,6 +127,7 @@ struct PunishListQuery {
 pub fn router() -> Router<AppState> {
     return Router::new()
         .route("/punishments", get(punishments_page))
+        .route("/punishments/assign", post(assign_pick_ssr))
         .route("/punishments/{id}/clear", post(clear_ssr))
         .route("/punishments/{id}/waive", post(waive_ssr))
         .route("/catalog", post(add_catalog_ssr))
@@ -98,34 +147,101 @@ async fn punishments_page(
     PageAuth(auth): PageAuth,
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
+    Query(query): Query<PageQuery>,
 ) -> WebResult {
-    let shell = Shell::load(&state, &auth, "penalties", &headers).await?;
-    let pending = punish::list_punishments(&state.pool, auth.id, "pending").await?;
-    let history = punish::list_punishments(&state.pool, auth.id, "history").await?;
-    let catalog = punish::list_catalog(&state.pool).await?;
-    let page = PunishmentsPage {
-        shell,
-        pending: pending.iter().map(punish_vm).collect(),
-        history: history.iter().map(punish_vm).collect(),
-        catalog: catalog.iter().map(catalog_vm).collect(),
-    };
+    let tab = tab_from_raw(query.tab.as_deref());
+    let page = build_page(&state, &auth, &headers, tab, None).await?;
     return Ok(html(&page)?);
+}
+
+async fn build_page(
+    state: &AppState,
+    auth: &SessionUser,
+    headers: &axum::http::HeaderMap,
+    tab: &'static str,
+    assign_error: Option<&'static str>,
+) -> Result<PunishmentsPage, WebError> {
+    let shell = Shell::load(state, auth, "penalties", headers).await?;
+    let mut pending: Vec<PenaltyVm> = Vec::new();
+    let mut history: Vec<HistoryVm> = Vec::new();
+    let mut everyone: Vec<GroupVm> = Vec::new();
+    let mut members: Vec<MemberVm> = Vec::new();
+    let mut catalog: Vec<CatalogVm> = Vec::new();
+    if tab == "mine" {
+        let details = punish::list_user_details(&state.pool, auth.id).await?;
+        for detail in &details {
+            if detail.status == "pending" {
+                pending.push(penalty_vm(detail));
+            } else {
+                history.push(history_vm(detail));
+            }
+        }
+        history.sort_by(|a, b| b.date.cmp(&a.date));
+    } else if tab == "everyone" {
+        let details = punish::list_pending_details(&state.pool).await?;
+        for detail in &details {
+            let same_group =
+                matches!(everyone.last(), Some(group) if group.user_id == detail.user_id);
+            if !same_group {
+                let avatar = AvatarVm::load(&state.pool, detail.user_id).await?;
+                everyone.push(GroupVm {
+                    user_id: detail.user_id,
+                    username: detail.username.clone(),
+                    avatar,
+                    count: 0,
+                    is_self: detail.user_id == auth.id,
+                    items: Vec::new(),
+                });
+            }
+            if let Some(group) = everyone.last_mut() {
+                group.items.push(penalty_vm(detail));
+            }
+        }
+        for group in &mut everyone {
+            group.count = u64::try_from(group.items.len()).unwrap_or(0);
+        }
+        let member_rows = punish::list_members(&state.pool).await?;
+        members = member_rows
+            .into_iter()
+            .map(|(id, username)| MemberVm { id, username })
+            .collect();
+        catalog = load_catalog(state).await?;
+    } else {
+        catalog = load_catalog(state).await?;
+    }
+    return Ok(PunishmentsPage {
+        shell,
+        tab,
+        pending,
+        history,
+        everyone,
+        members,
+        catalog,
+        assign_error,
+    });
+}
+
+async fn load_catalog(state: &AppState) -> Result<Vec<CatalogVm>, WebError> {
+    let items = punish::list_catalog(&state.pool).await?;
+    return Ok(items.iter().map(catalog_vm).collect());
 }
 
 async fn clear_ssr(
     PageAuth(auth): PageAuth,
     State(state): State<AppState>,
     Path(punishment_id): Path<i64>,
+    Form(form): Form<TabForm>,
 ) -> WebResult {
-    return close_and_redirect(&state, auth.id, punishment_id, false).await;
+    return close_and_redirect(&state, auth.id, punishment_id, false, form.tab.as_deref()).await;
 }
 
 async fn waive_ssr(
     PageAuth(auth): PageAuth,
     State(state): State<AppState>,
     Path(punishment_id): Path<i64>,
+    Form(form): Form<TabForm>,
 ) -> WebResult {
-    return close_and_redirect(&state, auth.id, punishment_id, true).await;
+    return close_and_redirect(&state, auth.id, punishment_id, true, form.tab.as_deref()).await;
 }
 
 async fn close_and_redirect(
@@ -133,16 +249,18 @@ async fn close_and_redirect(
     user_id: i64,
     punishment_id: i64,
     waive: bool,
+    tab_raw: Option<&str>,
 ) -> WebResult {
+    let tab = tab_from_raw(tab_raw);
     return match punish::close_punishment(&state.pool, user_id, punishment_id, waive).await? {
         punish::PunishOutcome::Done => {
             let message = if waive {
-                "Punishment waived"
+                "Penalty waived"
             } else {
-                "Punishment cleared"
+                "Penalty cleared"
             };
             Ok(super::shell::redirect_with_flash(
-                "/punishments",
+                &tab_target(tab),
                 message,
                 state.config.cookie_secure,
             ))
@@ -157,6 +275,7 @@ async fn add_catalog_ssr(
     State(state): State<AppState>,
     Form(payload): Form<CatalogFormPayload>,
 ) -> WebResult {
+    let tab = tab_from_raw(payload.tab.as_deref());
     let title = require_title(payload.title.as_deref())?;
     punish::add_catalog_item(
         &state.pool,
@@ -166,7 +285,7 @@ async fn add_catalog_ssr(
     )
     .await?;
     return Ok(super::shell::redirect_with_flash(
-        "/punishments",
+        &tab_target(tab),
         "Catalog item added",
         state.config.cookie_secure,
     ));
@@ -176,30 +295,38 @@ async fn deactivate_ssr(
     PageAuth(_auth): PageAuth,
     State(state): State<AppState>,
     Path(catalog_id): Path<i64>,
+    Form(form): Form<TabForm>,
 ) -> WebResult {
-    match punish::set_catalog_active(&state.pool, catalog_id, false).await? {
-        false => return Err(WebError::NotFound),
-        true => {
-            return Ok(super::shell::redirect_with_flash(
-                "/punishments",
-                "Catalog item deactivated",
-                state.config.cookie_secure,
-            ));
-        }
-    }
+    return set_active_and_redirect(&state, catalog_id, false, form.tab.as_deref()).await;
 }
 
 async fn activate_ssr(
     PageAuth(_auth): PageAuth,
     State(state): State<AppState>,
     Path(catalog_id): Path<i64>,
+    Form(form): Form<TabForm>,
 ) -> WebResult {
-    match punish::set_catalog_active(&state.pool, catalog_id, true).await? {
+    return set_active_and_redirect(&state, catalog_id, true, form.tab.as_deref()).await;
+}
+
+async fn set_active_and_redirect(
+    state: &AppState,
+    catalog_id: i64,
+    active: bool,
+    tab_raw: Option<&str>,
+) -> WebResult {
+    let tab = tab_from_raw(tab_raw);
+    match punish::set_catalog_active(&state.pool, catalog_id, active).await? {
         false => return Err(WebError::NotFound),
         true => {
+            let message = if active {
+                "Catalog item activated"
+            } else {
+                "Catalog item deactivated"
+            };
             return Ok(super::shell::redirect_with_flash(
-                "/punishments",
-                "Catalog item activated",
+                &tab_target(tab),
+                message,
                 state.config.cookie_secure,
             ));
         }
@@ -212,13 +339,77 @@ async fn assign_ssr(
     Path(target_user): Path<i64>,
     Form(payload): Form<AssignFormPayload>,
 ) -> WebResult {
-    let target = target_from_form(&payload)?;
+    let tab = tab_from_raw(payload.tab.as_deref());
+    let target = target_from_form(
+        payload.catalog_id.as_deref(),
+        payload.custom_title.as_deref(),
+    )
+    .map_err(WebError::Validation)?;
     assign_common(&state, target_user, target).await?;
     return Ok(super::shell::redirect_with_flash(
-        "/punishments",
-        "Punishment assigned",
+        &tab_target(tab),
+        "Penalty assigned",
         state.config.cookie_secure,
     ));
+}
+
+async fn assign_pick_ssr(
+    PageAuth(auth): PageAuth,
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Form(form): Form<AssignPickForm>,
+) -> WebResult {
+    let tab = tab_from_raw(form.tab.as_deref());
+    let target_user = form
+        .user_id
+        .as_deref()
+        .and_then(|raw| raw.trim().parse::<i64>().ok());
+    let Some(target_user) = target_user else {
+        return render_error_page(&state, &auth, &headers, tab, "Choose a member").await;
+    };
+    let target = match target_from_form(form.catalog_id.as_deref(), form.custom_title.as_deref()) {
+        Ok(target) => target,
+        Err(message) => {
+            let ui_message = match message {
+                "title must be 1-200 characters" => "Use 1 to 200 characters for the title",
+                _ => "Pick a catalog item or enter a custom title",
+            };
+            return render_error_page(&state, &auth, &headers, tab, ui_message).await;
+        }
+    };
+    return match assign_common(&state, target_user, target).await {
+        Ok(_) => Ok(super::shell::redirect_with_flash(
+            &tab_target(tab),
+            "Penalty assigned",
+            state.config.cookie_secure,
+        )),
+        Err(WebError::NotFound) => {
+            render_error_page(&state, &auth, &headers, tab, "Choose a member").await
+        }
+        Err(WebError::Validation(_)) => {
+            render_error_page(
+                &state,
+                &auth,
+                &headers,
+                tab,
+                "That catalog item is not available",
+            )
+            .await
+        }
+        Err(err) => Err(err),
+    };
+}
+
+async fn render_error_page(
+    state: &AppState,
+    auth: &SessionUser,
+    headers: &axum::http::HeaderMap,
+    tab: &'static str,
+    message: &'static str,
+) -> WebResult {
+    let page = build_page(state, auth, headers, tab, Some(message)).await?;
+    let body = page.render()?;
+    return Ok((StatusCode::UNPROCESSABLE_ENTITY, axum::response::Html(body)).into_response());
 }
 
 async fn api_list(
@@ -373,29 +564,44 @@ async fn assign_common(
     return Ok(id);
 }
 
-fn target_from_form(payload: &AssignFormPayload) -> Result<AssignTarget, WebError> {
-    let catalog_id = match payload.catalog_id.as_deref() {
+fn tab_from_raw(raw: Option<&str>) -> &'static str {
+    return match raw {
+        Some("everyone") => "everyone",
+        Some("catalog") => "catalog",
+        _ => "mine",
+    };
+}
+
+fn tab_target(tab: &str) -> String {
+    return format!("/punishments?tab={tab}");
+}
+
+fn target_from_form(
+    catalog_raw: Option<&str>,
+    custom_raw: Option<&str>,
+) -> Result<AssignTarget, &'static str> {
+    let catalog_id = match catalog_raw {
         None | Some("") => None,
         Some(raw) => Some(
             raw.trim()
                 .parse::<i64>()
-                .map_err(|_| WebError::Validation("catalog_id must be a number"))?,
+                .map_err(|_| "catalog_id must be a number")?,
         ),
     };
-    let custom_title = match payload.custom_title.as_deref() {
+    let custom_title = match custom_raw {
         None | Some("") => None,
         Some(raw) => Some(raw.to_string()),
     };
     return match (catalog_id, custom_title) {
-        (Some(_), Some(_)) | (None, None) => Err(WebError::Validation(
-            "provide exactly one of catalog_id or custom_title",
-        )),
+        (Some(_), Some(_)) | (None, None) => {
+            Err("provide exactly one of catalog_id or custom_title")
+        }
         (Some(id), None) => Ok(AssignTarget::Catalog(id)),
         (None, Some(title)) => {
             if !punish::valid_title(&title) {
-                return Err(WebError::Validation("title must be 1-200 characters"));
+                return Err("title must be 1-200 characters");
             }
-            Ok(AssignTarget::Custom(title))
+            return Ok(AssignTarget::Custom(title));
         }
     };
 }
@@ -417,21 +623,54 @@ fn clean_optional(raw: Option<&str>) -> Option<String> {
         .map(str::to_string);
 }
 
-fn punish_vm(item: &punish::PunishmentItem) -> PunishVm {
-    return PunishVm {
-        id: item.id,
-        title: item.title.clone().unwrap_or_else(|| {
-            if item.source == "auto" && item.status == "pending" {
-                "missed — no punishment available".to_string()
-            } else {
-                "(removed)".to_string()
-            }
-        }),
-        description: item.description.clone(),
-        source: item.source.clone(),
-        status: item.status.clone(),
-        cleared_at: item.cleared_at.clone(),
+fn penalty_vm(item: &punish::PunishmentDetail) -> PenaltyVm {
+    let source_label = if item.source == "auto" {
+        match (&item.missed_routine, &item.missed_date) {
+            (Some(routine), Some(date)) => format!("Auto · missed {routine} on {date}"),
+            _ => "Auto".to_string(),
+        }
+    } else {
+        "Assigned".to_string()
     };
+    return PenaltyVm {
+        id: item.id,
+        title: fallback_title(item),
+        description: item.description.clone(),
+        source_label,
+        assigned_date: day_of(&item.assigned_at),
+    };
+}
+
+fn history_vm(item: &punish::PunishmentDetail) -> HistoryVm {
+    let (pill_class, pill_word, pill_icon) = if item.status == "cleared" {
+        ("pill-done", "Cleared", "circle-check")
+    } else {
+        ("pill-planned", "Waived", "x")
+    };
+    return HistoryVm {
+        title: fallback_title(item),
+        pill_class,
+        pill_word,
+        pill_icon,
+        date: match &item.cleared_at {
+            Some(ts) => day_of(ts),
+            None => day_of(&item.assigned_at),
+        },
+    };
+}
+
+fn fallback_title(item: &punish::PunishmentDetail) -> String {
+    return item.title.clone().unwrap_or_else(|| {
+        if item.source == "auto" && item.status == "pending" {
+            "missed — no punishment available".to_string()
+        } else {
+            "(removed)".to_string()
+        }
+    });
+}
+
+fn day_of(ts: &str) -> String {
+    return ts.get(..10).unwrap_or(ts).to_string();
 }
 
 fn catalog_vm(item: &punish::CatalogItem) -> CatalogVm {

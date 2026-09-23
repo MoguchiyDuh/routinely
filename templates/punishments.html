@@ -1,65 +1,152 @@
 {% extends "base.html" %}
+{% import "_macros.html" as ui %}
 {% block title %}Penalties{% endblock %}
 {% block pagetitle %}Penalties{% endblock %}
 {% block content %}
-<h1>punishments</h1>
-<section id="queue" class="card">
-<h2>queue</h2>
+<div class="page">
+<h1>Penalties</h1>
+<nav class="tabs" aria-label="Penalty views">
+<a href="/punishments?tab=mine"{% if tab == "mine" %} aria-current="page"{% endif %}>Mine{% if shell.pending_count > 0 %} <span class="badge">{{ shell.pending_count }}</span>{% endif %}</a>
+<a href="/punishments?tab=everyone"{% if tab == "everyone" %} aria-current="page"{% endif %}>Everyone</a>
+<a href="/punishments?tab=catalog"{% if tab == "catalog" %} aria-current="page"{% endif %}>Catalog</a>
+</nav>
+{% if tab == "mine" %}
+<section class="card">
+<h2>Pending</h2>
 {% if pending.is_empty() %}
-<p class="empty">nothing pending</p>
+<div class="empty">
+<svg class="icon" aria-hidden="true"><use href="/static/icons.svg#circle-check"/></svg>
+<p>No pending penalties.</p>
+</div>
 {% endif %}
+<div class="penalty-list">
 {% for p in pending %}
-<div class="punishment pending">
-<span class="title">{{ p.title }}</span>
-<span class="source">{{ p.source }}</span>
-{% if let Some(desc) = p.description %}<span class="desc">{{ desc }}</span>{% endif %}
-<form method="post" action="/punishments/{{ p.id }}/clear" class="compact"><button type="submit">clear</button></form>
-<form method="post" action="/punishments/{{ p.id }}/waive" class="compact"><button type="submit">waive</button></form>
+<article class="penalty-card">
+<span class="penalty-title">{{ p.title }}</span>
+<span class="pill pill-planned">{{ p.source_label }}</span>
+<span class="penalty-meta">Assigned <span class="tnum">{{ p.assigned_date }}</span></span>
+{% if let Some(desc) = p.description %}<p class="penalty-desc">{{ desc }}</p>{% endif %}
+<div class="penalty-actions">
+<form method="post" action="/punishments/{{ p.id }}/clear"><input type="hidden" name="tab" value="mine"><button type="submit" class="btn btn-primary btn-sm">Clear</button></form>
+<form method="post" action="/punishments/{{ p.id }}/waive"><input type="hidden" name="tab" value="mine"><button type="submit" class="btn btn-ghost btn-sm">Waive</button></form>
 </div>
+</article>
 {% endfor %}
+</div>
 </section>
-<section id="history" class="card">
-<h2>history</h2>
+<section class="card">
+<h2>History</h2>
 {% if history.is_empty() %}
-<p class="empty">no history yet</p>
+<div class="empty">
+<svg class="icon" aria-hidden="true"><use href="/static/icons.svg#clock"/></svg>
+<p>No history yet.</p>
+</div>
 {% endif %}
-{% for p in history %}
-<div class="punishment done">
-<span class="title">{{ p.title }}</span>
-<span class="status-text">{{ p.status }}</span>
-{% if let Some(ts) = p.cleared_at %}<span class="cleared">{{ ts }}</span>{% endif %}
+<div class="history-list">
+{% for h in history %}
+<div class="history-item">
+<span class="history-title">{{ h.title }}</span>
+{{ ui::status_pill(h.pill_class, h.pill_word, h.pill_icon) }}
+<span class="history-date tnum">{{ h.date }}</span>
 </div>
 {% endfor %}
-</section>
-<section id="catalog" class="card">
-<h2>catalog</h2>
-<form method="post" action="/catalog" class="catalog-form">
-<input type="text" name="title" placeholder="title" maxlength="200">
-<input type="text" name="description" placeholder="description">
-<button type="submit">add punishment idea</button>
-</form>
-{% for c in catalog %}
-<div class="catalog-item">
-<span class="title">{{ c.title }}</span>
-{% if let Some(desc) = c.description %}<span class="desc">{{ desc }}</span>{% endif %}
-{% if c.active %}
-<form method="post" action="/catalog/{{ c.id }}/deactivate" class="compact"><button type="submit" class="ghost">deactivate</button></form>
-{% else %}
-<form method="post" action="/catalog/{{ c.id }}/activate" class="compact"><button type="submit">activate</button></form>
-{% endif %}
 </div>
+</section>
+{% else if tab == "everyone" %}
+{% if everyone.is_empty() %}
+<section class="card">
+<div class="empty">
+<svg class="icon" aria-hidden="true"><use href="/static/icons.svg#users"/></svg>
+<p>No pending penalties for anyone.</p>
+</div>
+</section>
+{% endif %}
+{% for g in everyone %}
+<section class="card">
+<div class="card-header">
+{{ ui::avatar(&g.avatar, "sm") }}
+<h2>{{ g.username }}</h2>
+<span class="badge">{{ g.count }}</span>
+</div>
+{% for p in g.items %}
+<article class="penalty-card">
+<span class="penalty-title">{{ p.title }}</span>
+<span class="pill pill-planned">{{ p.source_label }}</span>
+<span class="penalty-meta">Assigned <span class="tnum">{{ p.assigned_date }}</span></span>
+{% if let Some(desc) = p.description %}<p class="penalty-desc">{{ desc }}</p>{% endif %}
+{% if g.is_self %}
+<div class="penalty-actions">
+<form method="post" action="/punishments/{{ p.id }}/clear"><input type="hidden" name="tab" value="everyone"><button type="submit" class="btn btn-primary btn-sm">Clear</button></form>
+<form method="post" action="/punishments/{{ p.id }}/waive"><input type="hidden" name="tab" value="everyone"><button type="submit" class="btn btn-ghost btn-sm">Waive</button></form>
+</div>
+{% endif %}
+</article>
 {% endfor %}
 </section>
-<section id="assign" class="card">
-<h2>assign punishment</h2>
-<form method="post" action="/users/0/punishments" onsubmit="this.action = '/users/' + this.user_id.value + '/punishments'" class="catalog-form">
-<input type="number" name="user_id" placeholder="assignee user id" required>
-<select name="catalog_id">
-<option value="">custom</option>
-{% for c in catalog %}{% if c.active %}<option value="{{ c.id }}">{{ c.title }}</option>{% endif %}{% endfor %}
+{% endfor %}
+<section class="card">
+<h2>Assign a penalty</h2>
+{% if let Some(err) = assign_error %}<p class="form-error">{{ err }}</p>{% endif %}
+<form method="post" action="/punishments/assign" class="assign-form">
+<div class="field">
+<label for="assign-user">Member</label>
+<select id="assign-user" name="user_id" required>
+{% for m in members %}<option value="{{ m.id }}">{{ m.username }}</option>{% endfor %}
 </select>
-<input type="text" name="custom_title" placeholder="custom title" maxlength="200">
-<button type="submit">punish</button>
+</div>
+<div class="field">
+<label for="assign-catalog">Penalty</label>
+<select id="assign-catalog" name="catalog_id">
+{% for c in catalog %}{% if c.active %}<option value="{{ c.id }}">{{ c.title }}</option>{% endif %}{% endfor %}
+<option value="">Custom…</option>
+</select>
+</div>
+<div class="field assign-custom">
+<label for="assign-custom">Custom title</label>
+<input id="assign-custom" type="text" name="custom_title" maxlength="200">
+</div>
+<input type="hidden" name="tab" value="everyone">
+<button type="submit" class="btn btn-primary">Assign</button>
 </form>
 </section>
+{% else %}
+<section class="card">
+<h2>Add a catalog item</h2>
+<form method="post" action="/catalog" class="catalog-form">
+<div class="field">
+<label for="catalog-title">Title</label>
+<input id="catalog-title" type="text" name="title" maxlength="200" required>
+</div>
+<div class="field">
+<label for="catalog-description">Description</label>
+<input id="catalog-description" type="text" name="description">
+</div>
+<input type="hidden" name="tab" value="catalog">
+<button type="submit" class="btn btn-primary">Add item</button>
+</form>
+</section>
+<section class="card">
+<h2>Catalog</h2>
+{% if catalog.is_empty() %}
+<div class="empty">
+<svg class="icon" aria-hidden="true"><use href="/static/icons.svg#plus"/></svg>
+<p>No catalog items yet.</p>
+</div>
+{% endif %}
+{% for c in catalog %}
+<div class="catalog-item{% if !c.active %} is-inactive{% endif %}">
+<span class="title">{{ c.title }}</span>
+{% if let Some(desc) = c.description %}<span class="catalog-desc">{{ desc }}</span>{% endif %}
+{% if c.active %}
+<span class="pill pill-done">Active</span>
+<form method="post" action="/catalog/{{ c.id }}/deactivate"><input type="hidden" name="tab" value="catalog"><button type="submit" class="btn btn-ghost btn-sm">Deactivate</button></form>
+{% else %}
+<span class="pill pill-planned">Inactive</span>
+<form method="post" action="/catalog/{{ c.id }}/activate"><input type="hidden" name="tab" value="catalog"><button type="submit" class="btn btn-secondary btn-sm">Activate</button></form>
+{% endif %}
+</div>
+{% endfor %}
+</section>
+{% endif %}
+</div>
 {% endblock %}

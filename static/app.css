@@ -2325,13 +2325,77 @@ tbody tr:hover {
   margin-left: auto;
 }
 
+.penalty-card .pill {
+  flex: none;
+}
+
+.penalty-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.penalty-meta {
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
+.history-title {
+  color: var(--text);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.history-date {
+  margin-left: auto;
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.tabs a .badge {
+  margin-left: 6px;
+}
+
+.assign-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--sp-3);
+}
+
+.assign-form .field {
+  margin: 0;
+  flex: 1 1 180px;
+}
+
+.assign-form .assign-custom {
+  display: none;
+  flex: 1 1 220px;
+}
+
+.assign-form:has(select[name="catalog_id"] option[value=""]:checked) .assign-custom {
+  display: flex;
+}
+
+.assign-form .btn {
+  flex: none;
+}
+
+.catalog-form .field {
+  margin: 0;
+  flex: 1 1 200px;
+}
+
+.catalog-form .btn {
+  flex: none;
+}
+
 .history-list {
   display: flex;
   flex-direction: column;
 }
 
-.history-item,
-.punishment {
+.history-item {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2342,14 +2406,8 @@ tbody tr:hover {
   color: var(--text-2);
 }
 
-.history-item:last-child,
-.punishment:last-child {
+.history-item:last-child {
   border-bottom: 0;
-}
-
-.punishment.done,
-.history-item .status-text {
-  color: var(--muted);
 }
 
 .catalog-item {
@@ -2370,12 +2428,18 @@ tbody tr:hover {
   font-weight: 500;
 }
 
-.desc,
-.source,
-.cleared,
-.status-text {
+.catalog-desc {
   font-size: var(--text-sm);
   color: var(--muted);
+}
+
+.catalog-item.is-inactive .title,
+.catalog-item.is-inactive .catalog-desc {
+  color: var(--muted);
+}
+
+.catalog-item form {
+  margin-left: auto;
 }
 
 .avatar-current {
@@ -2990,4 +3054,9 @@ tbody tr:hover {
 
 .settings-form {
   max-width: 420px;
+}
+
+.tabs {
+  overflow-y: hidden;
+  scrollbar-width: none;
 }
