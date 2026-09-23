@@ -52,6 +52,7 @@ pub struct DayRoutineInfo {
 pub struct WeekOccurrenceRow {
     pub occurrence_id: i64,
     pub routine_id: i64,
+    pub user_id: i64,
     pub title: String,
     pub time_of_day: Option<String>,
     pub time_end: Option<String>,
@@ -70,10 +71,20 @@ pub struct RoutineWithUser {
 #[derive(Debug, Clone)]
 pub struct WeekTodoRow {
     pub id: i64,
+    pub user_id: i64,
     pub title: String,
     pub username: String,
     pub deadline: String,
     pub completed_at: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MemberRow {
+    pub id: i64,
+    pub username: String,
+    pub avatar_path: Option<String>,
+    pub avatar_icon: Option<String>,
+    pub avatar_color: Option<i64>,
 }
 
 #[derive(Debug, Clone)]
@@ -85,6 +96,7 @@ pub struct PinRow {
 }
 
 type WeekOccurrenceRecord = (
+    i64,
     i64,
     i64,
     String,
@@ -120,7 +132,7 @@ pub async fn week_occurrences(
     end: NaiveDate,
 ) -> Result<Vec<WeekOccurrenceRow>, sqlx::Error> {
     let rows: Vec<WeekOccurrenceRecord> = sqlx::query_as(
-        "SELECT o.id, r.id, r.title, r.time_of_day, r.time_end, u.username, o.due_date, \
+        "SELECT o.id, r.id, r.user_id, r.title, r.time_of_day, r.time_end, u.username, o.due_date, \
          (c.id IS NOT NULL), (p.id IS NOT NULL) \
          FROM occurrences o \
          JOIN routines r ON r.id = o.routine_id \
@@ -140,6 +152,7 @@ pub async fn week_occurrences(
             |(
                 occurrence_id,
                 routine_id,
+                user_id,
                 title,
                 time_of_day,
                 time_end,
@@ -151,6 +164,7 @@ pub async fn week_occurrences(
                 WeekOccurrenceRow {
                     occurrence_id,
                     routine_id,
+                    user_id,
                     title,
                     time_of_day,
                     time_end,
@@ -217,7 +231,7 @@ pub async fn active_routines_with_users(
     return Ok(out);
 }
 
-type WeekTodoRecord = (i64, String, Option<String>, Option<String>, String);
+type WeekTodoRecord = (i64, i64, String, Option<String>, Option<String>, String);
 
 type PinAttachmentRecord = (i64, String, Option<String>, Option<String>, Option<String>);
 
@@ -227,7 +241,7 @@ pub async fn todos_with_deadline_between(
     until_utc_exclusive: &str,
 ) -> Result<Vec<WeekTodoRow>, sqlx::Error> {
     let rows: Vec<WeekTodoRecord> = sqlx::query_as(
-        "SELECT t.id, t.title, t.deadline, t.completed_at, u.username \
+        "SELECT t.id, t.user_id, t.title, t.deadline, t.completed_at, u.username \
          FROM todos t JOIN users u ON u.id = t.user_id \
          WHERE t.deadline IS NOT NULL AND t.deadline >= ? AND t.deadline < ? \
          ORDER BY t.deadline, t.id",
@@ -239,12 +253,35 @@ pub async fn todos_with_deadline_between(
     return Ok(rows
         .into_iter()
         .map(
-            |(id, title, deadline, completed_at, username)| WeekTodoRow {
+            |(id, user_id, title, deadline, completed_at, username)| WeekTodoRow {
                 id,
+                user_id,
                 title,
                 username,
                 deadline: deadline.unwrap_or_default(),
                 completed_at,
+            },
+        )
+        .collect());
+}
+
+type MemberRecord = (i64, String, Option<String>, Option<String>, Option<i64>);
+
+pub async fn list_members(pool: &SqlitePool) -> Result<Vec<MemberRow>, sqlx::Error> {
+    let rows: Vec<MemberRecord> = sqlx::query_as(
+        "SELECT id, username, avatar_path, avatar_icon, avatar_color FROM users ORDER BY id",
+    )
+    .fetch_all(pool)
+    .await?;
+    return Ok(rows
+        .into_iter()
+        .map(
+            |(id, username, avatar_path, avatar_icon, avatar_color)| MemberRow {
+                id,
+                username,
+                avatar_path,
+                avatar_icon,
+                avatar_color,
             },
         )
         .collect());

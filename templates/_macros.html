@@ -43,6 +43,13 @@
 </div>
 {% endif %}
 {%- endmacro %}
+{% macro week_pin(has_pin, occurrence_id, prefix) -%}
+{% if has_pin %}
+{% if let Some(oid) = occurrence_id %}
+<details class="proof" hx-get="/occurrences/{{ oid }}/pin" hx-trigger="toggle once" hx-target="#{{ prefix }}pin-occ-{{ oid }}" hx-swap="outerHTML"><summary><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#paperclip"/></svg>Proof</summary><div id="{{ prefix }}pin-occ-{{ oid }}"></div></details>
+{% endif %}
+{% endif %}
+{%- endmacro %}
 {% macro proof(routine_id, occurrence_id, date) -%}
 {% if let Some(oid) = occurrence_id %}
 <details class="proof">

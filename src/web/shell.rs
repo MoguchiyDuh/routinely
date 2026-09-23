@@ -18,6 +18,7 @@ pub const FLASH_COOKIE_NAME: &str = "flash";
 const FLASH_MAX_BYTES: usize = 120;
 const PALETTE_SIZE: u8 = 10;
 
+#[derive(Clone)]
 pub struct AvatarVm {
     pub kind: &'static str,
     pub photo_url: Option<String>,

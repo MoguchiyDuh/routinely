@@ -1,0 +1,13 @@
+{% import "_macros.html" as ui %}
+<div class="tl-block status-{{ b.item.status }}{% if b.item.planned %} status-planned{% endif %}" style="--start: {{ b.start_min }}; --len: {{ b.len_min }}; --col: {{ b.col }}; --cols: {{ b.cols }}" aria-label="{{ b.aria }}">
+<div class="tl-head">
+{% if let Some(o) = b.item.owner %}
+<span class="user-dot" data-color="{{ o.color }}" title="{{ o.username }}"></span>
+{% endif %}
+<strong class="tl-title">{{ b.item.title }}</strong>
+{% if b.item.has_pill %}
+{{ ui::status_pill(b.item.pill_class, b.item.pill_word, b.item.pill_icon) }}
+{% endif %}
+</div>
+{{ ui::week_pin(b.item.has_pin, b.item.occurrence_id, "tl-") }}
+</div>

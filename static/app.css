@@ -1730,11 +1730,16 @@ tbody tr:hover {
 }
 
 .week-day {
+  margin: 0;
   padding: var(--sp-2);
   text-align: center;
   font-size: var(--text-sm);
   color: var(--text-2);
   font-variant-numeric: tabular-nums;
+}
+
+.week-day a {
+  color: inherit;
 }
 
 .week-day.is-today {
@@ -1799,6 +1804,7 @@ tbody tr:hover {
 }
 
 .agenda-date {
+  margin: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1807,6 +1813,10 @@ tbody tr:hover {
   border-bottom: 1px solid var(--border);
   font-size: var(--text-md);
   font-weight: 600;
+}
+
+.agenda-date a {
+  color: inherit;
 }
 
 .agenda-entry {
@@ -1844,6 +1854,127 @@ tbody tr:hover {
   .week-grid {
     grid-template-columns: 1fr;
   }
+}
+
+.week-anytime .anytime-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  text-align: left;
+}
+
+.week-anytime .anytime-label {
+  justify-content: center;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.week-col .tl-marker {
+  left: 6px;
+  max-width: calc(100% - 12px);
+}
+
+.week-col .now-line {
+  left: 0;
+  right: 0;
+}
+
+.entry .entry-title {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.week-anytime .entry {
+  flex-wrap: wrap;
+}
+
+.week-anytime .entry .entry-title {
+  flex-basis: 100%;
+  order: -1;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.week-col .tl-block {
+  justify-content: flex-start;
+  padding: 3px 4px;
+  overflow: hidden;
+}
+
+.week-col .tl-head {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 4px;
+}
+
+.week-col .tl-title {
+  order: -1;
+  flex: 1 1 100%;
+  white-space: normal;
+  overflow-wrap: break-word;
+  hyphens: auto;
+  line-height: 1.15;
+}
+
+.week-col .tl-block .pill {
+  padding: 0;
+  background: none;
+  border: 0;
+}
+
+.week-col .tl-block .pill-word {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.entry.status-planned {
+  border-left-style: dashed;
+}
+
+.entry .time,
+.agenda-entry .time {
+  white-space: nowrap;
+}
+
+.owner-name {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agenda-time {
+  flex: none;
+  min-width: 42px;
+  color: var(--muted);
+}
+
+.agenda-entry.is-overdue {
+  color: var(--danger);
+}
+
+.agenda-entry.is-done .entry-title {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+.agenda-empty {
+  margin: 0;
+  padding: 10px var(--sp-3);
+  color: var(--muted);
+  font-size: var(--text-sm);
 }
 
 .routine-list {

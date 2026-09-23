@@ -253,6 +253,16 @@ async fn week_json(server: &Server, token: &str, date: Option<NaiveDate>) -> Val
     return response.json();
 }
 
+async fn week_json_who(server: &Server, token: &str, date: Option<NaiveDate>, who: &str) -> Value {
+    let path = match date {
+        Some(day) => format!("/api/v1/week?date={day}&who={who}"),
+        None => format!("/api/v1/week?who={who}"),
+    };
+    let response = json_call(server, "GET", &path, token, serde_json::json!({})).await;
+    assert_eq!(response.status, 200, "week json failed: {response:?}");
+    return response.json();
+}
+
 async fn occurrence_id_for(server: &Server, token: &str, routine_id: i64, date: NaiveDate) -> i64 {
     let day = json_call(
         server,
@@ -664,11 +674,110 @@ async fn third_user_sees_all_group_activity() {
     let deadline_entries = entries_for_day(&deadline_week, deadline_day);
     let bob_todo = find_todo(&deadline_entries, "bob chore").expect("carol must see bob todo");
     assert_eq!(bob_todo["username"], "bobby");
-    let page = get_page(&server, "/week", &carol).await;
+    let page = get_page(&server, "/week?who=all", &carol).await;
     assert_eq!(page.status, 200);
     assert!(
         page.body.contains("alice stretch"),
         "carol SSR week must show alice routine"
+    );
+}
+
+#[tokio::test]
+async fn who_filter_scopes_week_entries() {
+    let server = setup("who-filter").await;
+    let alice = signup_user(&server, "alice2", "UTC").await;
+    let bob = signup_user(&server, "bob2", "UTC").await;
+    let alice_routine =
+        create_routine(&server, &alice, weekdays_routine_payload("alice solo")).await;
+    let bob_routine = create_routine(&server, &bob, weekdays_routine_payload("bob solo")).await;
+    let today = today_utc();
+    materialize_day(&server, &alice, today).await;
+    materialize_day(&server, &bob, today).await;
+
+    let default_week = week_json(&server, &alice, Some(today)).await;
+    let default_entries = entries_for_day(&default_week, today);
+    assert!(
+        find_entry(&default_entries, "occurrence", alice_routine).is_some(),
+        "api default must keep returning every user: {default_entries:?}"
+    );
+    assert!(find_entry(&default_entries, "occurrence", bob_routine).is_some());
+
+    let me_week = week_json_who(&server, &alice, Some(today), "me").await;
+    let me_entries = entries_for_day(&me_week, today);
+    assert!(find_entry(&me_entries, "occurrence", alice_routine).is_some());
+    assert!(
+        find_entry(&me_entries, "occurrence", bob_routine).is_none(),
+        "who=me must hide other users: {me_entries:?}"
+    );
+
+    let bob_id: i64 = sqlx::query_scalar("SELECT id FROM users WHERE username = 'bob2'")
+        .fetch_one(&server.pool)
+        .await
+        .unwrap();
+    let bob_week = week_json_who(&server, &alice, Some(today), &bob_id.to_string()).await;
+    let bob_entries = entries_for_day(&bob_week, today);
+    assert!(find_entry(&bob_entries, "occurrence", bob_routine).is_some());
+    assert!(
+        find_entry(&bob_entries, "occurrence", alice_routine).is_none(),
+        "who=bob must hide alice entries: {bob_entries:?}"
+    );
+
+    let api_unknown = json_call(
+        &server,
+        "GET",
+        "/api/v1/week?who=424242",
+        &alice,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(api_unknown.status, 404);
+
+    let page = get_page(&server, "/week", &alice).await;
+    assert_eq!(page.status, 200);
+    assert!(
+        page.body.contains("alice solo"),
+        "own entry missing: {}",
+        page.body
+    );
+    assert!(
+        !page.body.contains("bob solo"),
+        "default week page must show only own entries: {}",
+        page.body
+    );
+
+    let all_page = get_page(&server, "/week?who=all", &alice).await;
+    assert_eq!(all_page.status, 200);
+    assert!(all_page.body.contains("alice solo"));
+    assert!(
+        all_page.body.contains("bob solo"),
+        "all mode missing bob entry"
+    );
+    assert!(
+        all_page.body.contains("bob2"),
+        "all mode entries must carry owner name: {}",
+        all_page.body
+    );
+    assert!(all_page.body.contains("Everyone"));
+
+    let bob_page = get_page(&server, &format!("/week?who={bob_id}"), &alice).await;
+    assert_eq!(bob_page.status, 200);
+    assert!(bob_page.body.contains("bob solo"));
+    assert!(
+        !bob_page.body.contains("alice solo"),
+        "who=bob page must hide alice entries: {}",
+        bob_page.body
+    );
+
+    let unknown = get_page(&server, "/week?who=424242", &alice).await;
+    assert_eq!(unknown.status, 404);
+
+    let invalid = get_page(&server, "/week?who=bogus", &alice).await;
+    assert_eq!(invalid.status, 200);
+    assert!(invalid.body.contains("alice solo"));
+    assert!(
+        !invalid.body.contains("bob solo"),
+        "invalid who must fall back to me: {}",
+        invalid.body
     );
 }
 

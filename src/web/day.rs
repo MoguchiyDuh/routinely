@@ -662,7 +662,7 @@ fn is_overdue(todo: &store::TodoRow, now: &str) -> bool {
     return deadline.as_str() < now;
 }
 
-fn status_meta(status: &'static str) -> (&'static str, &'static str, &'static str) {
+pub(crate) fn status_meta(status: &'static str) -> (&'static str, &'static str, &'static str) {
     return match status {
         "completed" => ("pill-done", "circle-check", "done"),
         "missed" => ("pill-missed", "circle-alert", "missed"),
@@ -686,7 +686,7 @@ fn period_name(period: store::PeriodKind) -> &'static str {
     };
 }
 
-fn parse_time_minutes(raw: Option<&str>) -> Option<i64> {
+pub(crate) fn parse_time_minutes(raw: Option<&str>) -> Option<i64> {
     let raw = raw?;
     let (hours, minutes) = raw.trim().split_once(':')?;
     let hours: i64 = hours.trim().parse().ok()?;
@@ -697,7 +697,7 @@ fn parse_time_minutes(raw: Option<&str>) -> Option<i64> {
     return Some(hours * 60 + minutes);
 }
 
-fn block_len(start: i64, end: Option<i64>) -> i64 {
+pub(crate) fn block_len(start: i64, end: Option<i64>) -> i64 {
     return match end {
         Some(end) if end > start => end - start,
         _ => 30,
@@ -723,11 +723,11 @@ fn progress_percent(done: u32, total: u32) -> u32 {
     return done * 100 / total;
 }
 
-fn hour_labels() -> Vec<String> {
+pub(crate) fn hour_labels() -> Vec<String> {
     return (0..24).map(|hour| format!("{hour:02}:00")).collect();
 }
 
-fn local_now_minutes(timezone: &str) -> i64 {
+pub(crate) fn local_now_minutes(timezone: &str) -> i64 {
     let now = Utc::now().with_timezone(&store::user_timezone(timezone));
     return i64::from(now.hour()) * 60 + i64::from(now.minute());
 }
