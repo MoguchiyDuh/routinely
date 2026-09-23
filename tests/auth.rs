@@ -430,6 +430,38 @@ async fn signup_page_uses_hidden_timezone_field() {
     );
 }
 
+#[tokio::test]
+async fn login_page_uses_current_password_autocomplete() {
+    let server = setup("login-ac").await;
+    let response = request(server.addr, "GET", "/login", &[], "").await;
+    assert_eq!(response.status, 200);
+    assert!(
+        response.body.contains(r#"autocomplete="current-password""#),
+        "login page must use current-password autocomplete: {}",
+        response.body
+    );
+}
+
+#[tokio::test]
+async fn signup_page_orders_code_field_before_username() {
+    let server = setup("signup-order").await;
+    let response = request(server.addr, "GET", "/signup", &[], "").await;
+    assert_eq!(response.status, 200);
+    let code = response
+        .body
+        .find(r#"name="code""#)
+        .expect("signup code field missing");
+    let username = response
+        .body
+        .find(r#"name="username""#)
+        .expect("username field missing");
+    assert!(
+        code < username,
+        "signup code field must render before username field: {}",
+        response.body
+    );
+}
+
 async fn probe(auth: PageAuth) -> String {
     return auth.0.username;
 }

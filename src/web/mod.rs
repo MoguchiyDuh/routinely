@@ -4,13 +4,18 @@ pub mod notes;
 pub mod occurrences;
 pub mod punishments;
 pub mod routines;
+pub mod shell;
 pub mod todos;
 pub mod week;
+
+pub use shell::AvatarVm;
+pub use shell::Shell;
 
 use axum::Router;
 use axum::http::HeaderMap;
 use axum::http::StatusCode;
 use axum::http::header;
+use axum::middleware;
 use axum::response::IntoResponse;
 use axum::response::Response;
 use thiserror::Error;
@@ -28,7 +33,8 @@ pub fn router() -> Router<AppState> {
         .merge(punishments::router())
         .merge(todos::router())
         .merge(notes::router())
-        .merge(week::router());
+        .merge(week::router())
+        .layer(middleware::from_fn(shell::clear_flash));
 }
 
 #[derive(Debug, Error)]

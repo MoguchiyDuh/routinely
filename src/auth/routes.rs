@@ -25,6 +25,7 @@ use super::password::PasswordError;
 use super::perform_login;
 use super::perform_signup;
 use super::session;
+use super::sync_timezone;
 
 #[derive(Debug, Error)]
 pub enum RouteError {
@@ -52,18 +53,15 @@ impl IntoResponse for RouteError {
 #[template(path = "signup.html")]
 struct SignupPage {
     error: Option<String>,
-    pending_count: u64,
-    nav_user_id: Option<i64>,
-    nav_username: String,
+    username: String,
+    code: String,
 }
 
 #[derive(Template)]
 #[template(path = "login.html")]
 struct LoginPage {
     error: Option<String>,
-    pending_count: u64,
-    nav_user_id: Option<i64>,
-    nav_username: String,
+    username: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -78,6 +76,7 @@ pub struct SignupPayload {
 pub struct LoginPayload {
     pub username: Option<String>,
     pub password: Option<String>,
+    pub timezone: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -111,9 +110,8 @@ pub fn router() -> Router<AppState> {
 async fn signup_page() -> Result<Response, RouteError> {
     return html_response(&SignupPage {
         error: None,
-        pending_count: 0,
-        nav_user_id: None,
-        nav_username: String::new(),
+        username: String::new(),
+        code: String::new(),
     });
 }
 
@@ -121,6 +119,8 @@ async fn signup_submit(
     State(state): State<AppState>,
     Form(payload): Form<SignupPayload>,
 ) -> Result<Response, RouteError> {
+    let username = payload.username.clone().unwrap_or_default();
+    let code = payload.code.clone().unwrap_or_default();
     let result = perform_signup(
         &state.pool,
         &state.config,
@@ -134,9 +134,8 @@ async fn signup_submit(
         Ok(user) => authed_redirect(&state, &user).await,
         Err(err) => html_response(&SignupPage {
             error: Some(signup_message(&err).to_string()),
-            pending_count: 0,
-            nav_user_id: None,
-            nav_username: String::new(),
+            username,
+            code,
         }),
     };
 }
@@ -144,9 +143,7 @@ async fn signup_submit(
 async fn login_page() -> Result<Response, RouteError> {
     return html_response(&LoginPage {
         error: None,
-        pending_count: 0,
-        nav_user_id: None,
-        nav_username: String::new(),
+        username: String::new(),
     });
 }
 
@@ -154,14 +151,16 @@ async fn login_submit(
     State(state): State<AppState>,
     Form(payload): Form<LoginPayload>,
 ) -> Result<Response, RouteError> {
+    let username = payload.username.clone().unwrap_or_default();
     let result = perform_login(&state.pool, payload.username, payload.password).await;
     return match result {
-        Ok(user) => authed_redirect(&state, &user).await,
+        Ok(mut user) => {
+            sync_timezone(&state.pool, &mut user, payload.timezone.as_deref()).await?;
+            return authed_redirect(&state, &user).await;
+        }
         Err(err) => html_response(&LoginPage {
             error: Some(login_message(&err).to_string()),
-            pending_count: 0,
-            nav_user_id: None,
-            nav_username: String::new(),
+            username,
         }),
     };
 }

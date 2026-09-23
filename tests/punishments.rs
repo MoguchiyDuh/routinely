@@ -892,7 +892,7 @@ async fn punishments_page_renders_queue_and_catalog() {
     assert!(page.body.contains("catalog"), "catalog section must render");
     assert!(page.body.contains("20 pushups"), "seeded items must render");
     assert!(
-        page.body.contains(r#"class="badge""#),
+        page.body.contains(r#"class="nav-badge""#),
         "pending badge must render: {}",
         page.body
     );

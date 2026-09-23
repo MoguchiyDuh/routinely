@@ -962,7 +962,8 @@ async fn unauth_requests_redirect_or_401() {
     let api = request(server.addr, "GET", "/api/v1/day", &[], b"").await;
     assert_eq!(api.status, 401);
     let root = request(server.addr, "GET", "/", &[], b"").await;
-    assert_eq!(root.status, 200);
+    assert_eq!(root.status, 303);
+    assert_eq!(root.header("location").as_deref(), Some("/login"));
 }
 
 #[tokio::test]

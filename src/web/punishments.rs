@@ -5,7 +5,6 @@ use axum::extract::Path;
 use axum::extract::Query;
 use axum::extract::State;
 use axum::response::IntoResponse;
-use axum::response::Redirect;
 use axum::response::Response;
 use axum::routing::get;
 use axum::routing::post;
@@ -21,13 +20,12 @@ use crate::punish::AssignTarget;
 use super::WebError;
 use super::WebResult;
 use super::html;
+use super::shell::Shell;
 
 #[derive(Template)]
 #[template(path = "punishments.html")]
-struct PunishmentsPage {
-    pending_count: u64,
-    nav_user_id: Option<i64>,
-    nav_username: String,
+pub struct PunishmentsPage {
+    pub shell: Shell,
     pending: Vec<PunishVm>,
     history: Vec<PunishVm>,
     catalog: Vec<CatalogVm>,
@@ -96,15 +94,17 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/users/{id}/punishments", post(api_assign));
 }
 
-async fn punishments_page(PageAuth(auth): PageAuth, State(state): State<AppState>) -> WebResult {
-    let pending_count = punish::pending_count(&state.pool, auth.id).await?;
+async fn punishments_page(
+    PageAuth(auth): PageAuth,
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> WebResult {
+    let shell = Shell::load(&state, &auth, "penalties", &headers).await?;
     let pending = punish::list_punishments(&state.pool, auth.id, "pending").await?;
     let history = punish::list_punishments(&state.pool, auth.id, "history").await?;
     let catalog = punish::list_catalog(&state.pool).await?;
     let page = PunishmentsPage {
-        pending_count,
-        nav_user_id: Some(auth.id),
-        nav_username: auth.username.clone(),
+        shell,
         pending: pending.iter().map(punish_vm).collect(),
         history: history.iter().map(punish_vm).collect(),
         catalog: catalog.iter().map(catalog_vm).collect(),
@@ -134,11 +134,22 @@ async fn close_and_redirect(
     punishment_id: i64,
     waive: bool,
 ) -> WebResult {
-    match punish::close_punishment(&state.pool, user_id, punishment_id, waive).await? {
-        punish::PunishOutcome::Done => return Ok(Redirect::to("/punishments").into_response()),
-        punish::PunishOutcome::NotPending => return Err(WebError::Conflict),
-        punish::PunishOutcome::Missing => return Err(WebError::NotFound),
-    }
+    return match punish::close_punishment(&state.pool, user_id, punishment_id, waive).await? {
+        punish::PunishOutcome::Done => {
+            let message = if waive {
+                "Punishment waived"
+            } else {
+                "Punishment cleared"
+            };
+            Ok(super::shell::redirect_with_flash(
+                "/punishments",
+                message,
+                state.config.cookie_secure,
+            ))
+        }
+        punish::PunishOutcome::NotPending => Err(WebError::Conflict),
+        punish::PunishOutcome::Missing => Err(WebError::NotFound),
+    };
 }
 
 async fn add_catalog_ssr(
@@ -154,7 +165,11 @@ async fn add_catalog_ssr(
         clean_optional(payload.description.as_deref()).as_deref(),
     )
     .await?;
-    return Ok(Redirect::to("/punishments").into_response());
+    return Ok(super::shell::redirect_with_flash(
+        "/punishments",
+        "Catalog item added",
+        state.config.cookie_secure,
+    ));
 }
 
 async fn deactivate_ssr(
@@ -164,7 +179,13 @@ async fn deactivate_ssr(
 ) -> WebResult {
     match punish::set_catalog_active(&state.pool, catalog_id, false).await? {
         false => return Err(WebError::NotFound),
-        true => return Ok(Redirect::to("/punishments").into_response()),
+        true => {
+            return Ok(super::shell::redirect_with_flash(
+                "/punishments",
+                "Catalog item deactivated",
+                state.config.cookie_secure,
+            ));
+        }
     }
 }
 
@@ -175,7 +196,13 @@ async fn activate_ssr(
 ) -> WebResult {
     match punish::set_catalog_active(&state.pool, catalog_id, true).await? {
         false => return Err(WebError::NotFound),
-        true => return Ok(Redirect::to("/punishments").into_response()),
+        true => {
+            return Ok(super::shell::redirect_with_flash(
+                "/punishments",
+                "Catalog item activated",
+                state.config.cookie_secure,
+            ));
+        }
     }
 }
 
@@ -187,7 +214,11 @@ async fn assign_ssr(
 ) -> WebResult {
     let target = target_from_form(&payload)?;
     assign_common(&state, target_user, target).await?;
-    return Ok(Redirect::to("/punishments").into_response());
+    return Ok(super::shell::redirect_with_flash(
+        "/punishments",
+        "Punishment assigned",
+        state.config.cookie_secure,
+    ));
 }
 
 async fn api_list(

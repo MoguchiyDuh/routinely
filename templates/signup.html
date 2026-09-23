@@ -1,45 +1,33 @@
-{% extends "base.html" %}
-{% block title %}signup{% endblock %}
+{% extends "auth_base.html" %}
+{% block title %}Create account{% endblock %}
 {% block content %}
-<div class="card narrow">
-<h1>signup</h1>
+<div class="auth-card">
+<div class="brand-mark"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#repeat"/></svg></div>
+<h1>Create account</h1>
+<p class="tagline">Routines, proof, and friendly accountability.</p>
 {% match error %}
 {% when Some with (message) %}
-<p class="error">{{ message }}</p>
+<p class="form-error" role="alert">{{ message }}</p>
 {% when None %}
 {% endmatch %}
 <form method="post" action="/signup">
 <div class="field">
-<label for="signup-code">signup code</label>
-<input id="signup-code" name="code" required>
+<label for="signup-code">Signup code</label>
+<input id="signup-code" name="code" autocomplete="off" required{% if !code.is_empty() %} value="{{ code }}"{% endif %}>
+<p class="hint">Ask the group for the code</p>
 </div>
 <div class="field">
-<label for="signup-username">username</label>
-<input id="signup-username" name="username" required>
+<label for="signup-username">Username</label>
+<input id="signup-username" name="username" autocomplete="username" required{% if !username.is_empty() %} value="{{ username }}"{% endif %}>
 </div>
 <div class="field">
-<label for="signup-password">password</label>
-<input id="signup-password" type="password" name="password" required>
+<label for="signup-password">Password</label>
+<input id="signup-password" type="password" name="password" autocomplete="new-password" minlength="8" required>
+<p class="hint">At least 8 characters</p>
 </div>
 <input type="hidden" name="timezone" id="timezone-field">
-<button type="submit">sign up</button>
+<button type="submit">Create account</button>
 </form>
-<p><a href="/login">login</a></p>
+<p class="auth-alt">Already have an account? <a href="/login">Log in</a></p>
 </div>
-<script>
-(function () {
-    var field = document.getElementById("timezone-field");
-    if (!field) {
-        return;
-    }
-    try {
-        var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        if (tz) {
-            field.value = tz;
-        }
-    } catch (err) {
-        return;
-    }
-})();
-</script>
 {% endblock %}

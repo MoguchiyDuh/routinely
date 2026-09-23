@@ -12,7 +12,6 @@ use sqlx::SqlitePool;
 use crate::app::AppState;
 use crate::auth::extract::ApiAuth;
 use crate::auth::extract::PageAuth;
-use crate::punish;
 use crate::recurrence::PeriodKind;
 use crate::score;
 use crate::store;
@@ -20,13 +19,12 @@ use crate::store;
 use super::WebError;
 use super::WebResult;
 use super::html;
+use super::shell::Shell;
 
 #[derive(Template)]
 #[template(path = "leaderboard.html")]
-struct LeaderboardPage {
-    pending_count: u64,
-    nav_user_id: Option<i64>,
-    nav_username: String,
+pub struct LeaderboardPage {
+    pub shell: Shell,
     rows: Vec<LeaderRowVm>,
 }
 
@@ -42,10 +40,8 @@ struct LeaderRowVm {
 
 #[derive(Template)]
 #[template(path = "profile.html")]
-struct ProfilePage {
-    pending_count: u64,
-    nav_user_id: Option<i64>,
-    nav_username: String,
+pub struct ProfilePage {
+    pub shell: Shell,
     username: String,
     timezone: String,
     member_since: String,
@@ -138,8 +134,12 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/users/{id}", get(api_profile));
 }
 
-async fn leaderboard_view(PageAuth(auth): PageAuth, State(state): State<AppState>) -> WebResult {
-    let pending_count = punish::pending_count(&state.pool, auth.id).await?;
+async fn leaderboard_view(
+    PageAuth(auth): PageAuth,
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> WebResult {
+    let shell = Shell::load(&state, &auth, "group", &headers).await?;
     let rows = score::leaderboard_rows(&state.pool).await?;
     let vms = rows
         .iter()
@@ -154,12 +154,7 @@ async fn leaderboard_view(PageAuth(auth): PageAuth, State(state): State<AppState
             pending: row.pending,
         })
         .collect();
-    let page = LeaderboardPage {
-        pending_count,
-        nav_user_id: Some(auth.id),
-        nav_username: auth.username.clone(),
-        rows: vms,
-    };
+    let page = LeaderboardPage { shell, rows: vms };
     return Ok(html(&page)?);
 }
 
@@ -188,15 +183,14 @@ async fn profile_view(
     PageAuth(auth): PageAuth,
     State(state): State<AppState>,
     Path(user_id): Path<i64>,
+    headers: axum::http::HeaderMap,
 ) -> WebResult {
     let Some(data) = build_profile(&state.pool, user_id).await? else {
         return Err(WebError::NotFound);
     };
-    let pending_count = punish::pending_count(&state.pool, auth.id).await?;
+    let shell = Shell::load(&state, &auth, "group", &headers).await?;
     let page = ProfilePage {
-        pending_count,
-        nav_user_id: Some(auth.id),
-        nav_username: auth.username.clone(),
+        shell,
         username: data.username,
         timezone: data.timezone,
         member_since: data.member_since,

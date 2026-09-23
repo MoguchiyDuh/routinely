@@ -10,10 +10,12 @@ use thiserror::Error;
 
 use crate::app::AppState;
 use crate::auth::session::SessionUser;
+use crate::cookie;
 use crate::punish;
 use crate::store;
 
 use super::SESSION_COOKIE_NAME;
+use super::TZ_COOKIE_NAME;
 use super::session;
 
 pub struct ApiAuth(pub session::SessionUser);
@@ -86,9 +88,13 @@ impl FromRequestParts<AppState> for PageAuth {
         let user = session::find_user_by_token(&state.pool, &token)
             .await
             .map_err(|_| PageAuthError::Internal)?;
-        let Some(user) = user else {
+        let Some(mut user) = user else {
             return Err(PageAuthError::Unauthorized);
         };
+        let tz = cookie::get(&parts.headers, TZ_COOKIE_NAME).and_then(|raw| cookie::decode(&raw));
+        super::sync_timezone(&state.pool, &mut user, tz.as_deref())
+            .await
+            .map_err(|_| PageAuthError::Internal)?;
         run_eval_hook(&state.pool, &user)
             .await
             .map_err(|_| PageAuthError::Internal)?;

@@ -19,7 +19,6 @@ use sqlx::SqlitePool;
 use crate::app::AppState;
 use crate::auth::extract::ApiAuth;
 use crate::auth::extract::PageAuth;
-use crate::punish;
 use crate::recurrence::PeriodKind;
 use crate::recurrence::ScheduleKind;
 use crate::recurrence::occurrences_in_range;
@@ -33,13 +32,12 @@ use super::WebError;
 use super::WebResult;
 use super::html;
 use super::parse_date_param;
+use super::shell::Shell;
 
 #[derive(Template)]
 #[template(path = "week.html")]
-struct WeekPage {
-    pending_count: u64,
-    nav_user_id: Option<i64>,
-    nav_username: String,
+pub struct WeekPage {
+    pub shell: Shell,
     week_start: NaiveDate,
     week_end: NaiveDate,
     prev_week: NaiveDate,
@@ -317,17 +315,16 @@ async fn week_view(
     PageAuth(auth): PageAuth,
     State(state): State<AppState>,
     Query(query): Query<WeekQuery>,
+    headers: axum::http::HeaderMap,
 ) -> WebResult {
     let today = store::user_today(&auth.timezone);
     let anchor = parse_date_param(query.date.as_deref(), today)?;
-    let pending_count = punish::pending_count(&state.pool, auth.id).await?;
+    let shell = Shell::load(&state, &auth, "week", &headers).await?;
     let (week_start, week_end, days) =
         build_week(&state.pool, &auth.timezone, anchor, today).await?;
     let (prev_week, next_week) = neighbor_weeks(week_start, week_end);
     let page = WeekPage {
-        pending_count,
-        nav_user_id: Some(auth.id),
-        nav_username: auth.username.clone(),
+        shell,
         week_start,
         week_end,
         prev_week,

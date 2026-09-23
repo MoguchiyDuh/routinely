@@ -1,24 +1,27 @@
-{% extends "base.html" %}
-{% block title %}login{% endblock %}
+{% extends "auth_base.html" %}
+{% block title %}Log in{% endblock %}
 {% block content %}
-<div class="card narrow">
-<h1>login</h1>
+<div class="auth-card">
+<div class="brand-mark"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#repeat"/></svg></div>
+<h1>Log in</h1>
+<p class="tagline">Routines, proof, and friendly accountability.</p>
 {% match error %}
 {% when Some with (message) %}
-<p class="error">{{ message }}</p>
+<p class="form-error" role="alert">{{ message }}</p>
 {% when None %}
 {% endmatch %}
 <form method="post" action="/login">
 <div class="field">
-<label for="login-username">username</label>
-<input id="login-username" name="username" required>
+<label for="login-username">Username</label>
+<input id="login-username" name="username" autocomplete="username" autofocus required{% if !username.is_empty() %} value="{{ username }}"{% endif %}>
 </div>
 <div class="field">
-<label for="login-password">password</label>
-<input id="login-password" type="password" name="password" required>
+<label for="login-password">Password</label>
+<input id="login-password" type="password" name="password" autocomplete="current-password" required>
 </div>
-<button type="submit">log in</button>
+<input type="hidden" name="timezone">
+<button type="submit">Log in</button>
 </form>
-<p><a href="/signup">signup</a></p>
+<p class="auth-alt">No account? <a href="/signup">Create one</a></p>
 </div>
 {% endblock %}

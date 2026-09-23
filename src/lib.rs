@@ -1,6 +1,7 @@
 pub mod app;
 pub mod auth;
 pub mod config;
+pub mod cookie;
 pub mod db;
 pub mod punish;
 pub mod recurrence;

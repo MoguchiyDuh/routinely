@@ -12,6 +12,7 @@ use crate::punish;
 use self::password::PasswordError;
 
 pub const SESSION_COOKIE_NAME: &str = "session";
+pub const TZ_COOKIE_NAME: &str = "tz";
 
 pub const MIN_USERNAME_CHARS: usize = 3;
 pub const MAX_USERNAME_CHARS: usize = 32;
@@ -113,6 +114,30 @@ pub async fn perform_login(
         username: user.username,
         timezone: user.timezone,
     });
+}
+
+pub async fn sync_timezone(
+    pool: &SqlitePool,
+    user: &mut session::SessionUser,
+    raw: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    let Some(raw) = raw else {
+        return Ok(());
+    };
+    let Ok(tz) = raw.trim().parse::<chrono_tz::Tz>() else {
+        return Ok(());
+    };
+    let name = tz.name();
+    if name == user.timezone {
+        return Ok(());
+    }
+    sqlx::query("UPDATE users SET timezone = ? WHERE id = ?")
+        .bind(name)
+        .bind(user.id)
+        .execute(pool)
+        .await?;
+    user.timezone = name.to_string();
+    return Ok(());
 }
 
 fn is_valid_username(username: &str) -> bool {

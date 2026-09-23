@@ -14,28 +14,18 @@ use sqlx::SqlitePool;
 use crate::app::AppState;
 use crate::auth::extract::ApiAuth;
 use crate::auth::extract::PageAuth;
-use crate::punish;
 use crate::store;
 
 use super::WebError;
 use super::WebResult;
 use super::html;
 use super::parse_date_param;
-
-#[derive(Template)]
-#[template(path = "home.html")]
-struct HomePage {
-    pending_count: u64,
-    nav_user_id: Option<i64>,
-    nav_username: String,
-}
+use super::shell::Shell;
 
 #[derive(Template)]
 #[template(path = "day.html")]
-struct DayPage {
-    pending_count: u64,
-    nav_user_id: Option<i64>,
-    nav_username: String,
+pub struct DayPage {
+    pub shell: Shell,
     date: NaiveDate,
     prev_date: NaiveDate,
     next_date: NaiveDate,
@@ -143,31 +133,26 @@ async fn root(State(state): State<AppState>, headers: axum::http::HeaderMap) -> 
     if user.is_some() {
         return Ok(Redirect::to("/day").into_response());
     }
-    return Ok(html(&HomePage {
-        pending_count: 0,
-        nav_user_id: None,
-        nav_username: String::new(),
-    })?);
+    return Ok(Redirect::to("/login").into_response());
 }
 
 async fn day_view(
     PageAuth(auth): PageAuth,
     State(state): State<AppState>,
     Query(query): Query<DayQuery>,
+    headers: axum::http::HeaderMap,
 ) -> WebResult {
     let today = store::user_today(&auth.timezone);
     let date = parse_date_param(query.date.as_deref(), today)?;
     let mut conn = state.pool.acquire().await?;
     store::materialize(&mut conn, auth.id, today).await?;
     drop(conn);
-    let pending_count = punish::pending_count(&state.pool, auth.id).await?;
+    let shell = Shell::load(&state, &auth, "today", &headers).await?;
     let rows = build_rows(&state.pool, auth.id, date, today).await?;
     let todos = build_todos(&state.pool, auth.id).await?;
     let body = store::get_note(&state.pool, auth.id, date).await?;
     let page = DayPage {
-        pending_count,
-        nav_user_id: Some(auth.id),
-        nav_username: auth.username.clone(),
+        shell,
         date,
         prev_date: prev_day(date),
         next_date: next_day(date),

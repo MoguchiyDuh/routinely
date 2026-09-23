@@ -1,0 +1,14 @@
+{% macro avatar(a, size) -%}
+<span class="avatar avatar-{{ size }}" data-color="{{ a.color }}" aria-hidden="true">
+{%- if a.kind == "photo" %}{% match a.photo_url %}{% when Some with (url) %}<img src="{{ url }}" alt="">{% when None %}{% endmatch %}
+{%- else if a.kind == "icon" %}{% match a.icon %}{% when Some with (icon) %}<svg class="icon" aria-hidden="true"><use href="/static/icons.svg#{{ icon }}"/></svg>{% when None %}{% endmatch %}
+{%- else %}{{ a.initials }}
+{%- endif %}</span>
+{%- endmacro %}
+{% macro menu_panel(user_id) -%}
+<div class="menu-panel">
+<a class="menu-item" href="/users/{{ user_id }}"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#user"/></svg>Profile</a>
+<a class="menu-item" href="/settings"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#settings"/></svg>Settings</a>
+<form method="post" action="/logout"><button type="submit" class="menu-item"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#log-out"/></svg>Log out</button></form>
+</div>
+{%- endmacro %}

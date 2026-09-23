@@ -4,7 +4,6 @@ use axum::extract::Form;
 use axum::extract::Path;
 use axum::extract::State;
 use axum::response::IntoResponse;
-use axum::response::Redirect;
 use axum::routing::get;
 use axum::routing::post;
 use chrono::NaiveDate;
@@ -22,14 +21,13 @@ use crate::store;
 use super::WebError;
 use super::WebResult;
 use super::html;
+use super::shell::Shell;
 
 #[derive(Template)]
 #[template(path = "new.html")]
-struct NewRoutinePage {
+pub struct NewRoutinePage {
     error: Option<String>,
-    pending_count: u64,
-    nav_user_id: Option<i64>,
-    nav_username: String,
+    pub shell: Shell,
 }
 
 #[derive(Template)]
@@ -87,13 +85,13 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/routines/{id}/archive", post(api_archive));
 }
 
-async fn new_routine_page() -> WebResult {
-    return Ok(html(&NewRoutinePage {
-        error: None,
-        pending_count: 0,
-        nav_user_id: None,
-        nav_username: String::new(),
-    })?);
+async fn new_routine_page(
+    PageAuth(auth): PageAuth,
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> WebResult {
+    let shell = Shell::load(&state, &auth, "routines", &headers).await?;
+    return Ok(html(&NewRoutinePage { error: None, shell })?);
 }
 
 async fn create_routine_ssr(
@@ -105,7 +103,11 @@ async fn create_routine_ssr(
     match form_spec(&payload, today) {
         Ok(spec) => {
             store::create_routine(&state.pool, auth.id, &spec).await?;
-            return Ok(Redirect::to("/day").into_response());
+            return Ok(super::shell::redirect_with_flash(
+                "/day",
+                "Routine created",
+                state.config.cookie_secure,
+            ));
         }
         Err(message) => {
             return Ok(html(&RoutineForm {
@@ -124,7 +126,11 @@ async fn archive_ssr(
     if !archived {
         return Err(WebError::NotFound);
     }
-    return Ok(Redirect::to("/day").into_response());
+    return Ok(super::shell::redirect_with_flash(
+        "/day",
+        "Routine archived",
+        state.config.cookie_secure,
+    ));
 }
 
 async fn api_create_routine(
