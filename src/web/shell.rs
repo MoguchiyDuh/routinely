@@ -121,6 +121,15 @@ impl Shell {
     }
 }
 
+pub fn avatar_json(avatar: &AvatarVm) -> serde_json::Value {
+    return serde_json::json!({
+        "kind": avatar.kind,
+        "url": avatar.photo_url,
+        "icon": avatar.icon,
+        "color": avatar.color,
+    });
+}
+
 pub fn flash_cookie(message: &str, secure: bool) -> String {
     let value = cookie::encode(message, FLASH_MAX_BYTES);
     let mut cookie =

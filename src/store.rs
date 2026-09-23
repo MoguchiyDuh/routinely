@@ -500,6 +500,17 @@ pub async fn active_routines(
     return Ok(rows.into_iter().map(routine_from_row).collect());
 }
 
+pub async fn all_routines(pool: &SqlitePool, user_id: i64) -> Result<Vec<RoutineRow>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, RoutineRecord>(
+        "SELECT id, user_id, title, notes, kind, weekdays_mask, period, per_period, iterations, start_date, end_date, time_of_day, time_end, archived_at \
+         FROM routines WHERE user_id = ? ORDER BY id",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+    return Ok(rows.into_iter().map(routine_from_row).collect());
+}
+
 pub async fn create_routine(
     pool: &SqlitePool,
     user_id: i64,

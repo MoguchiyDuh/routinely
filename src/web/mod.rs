@@ -4,6 +4,7 @@ pub mod notes;
 pub mod occurrences;
 pub mod punishments;
 pub mod routines;
+pub mod settings;
 pub mod shell;
 pub mod todos;
 pub mod week;
@@ -31,6 +32,7 @@ pub fn router() -> Router<AppState> {
         .merge(routines::router())
         .merge(occurrences::router())
         .merge(punishments::router())
+        .merge(settings::router())
         .merge(todos::router())
         .merge(notes::router())
         .merge(week::router())
@@ -45,6 +47,8 @@ pub enum WebError {
     Conflict,
     #[error("{0}")]
     Validation(&'static str),
+    #[error("internal")]
+    Internal,
     #[error(transparent)]
     Db(#[from] sqlx::Error),
     #[error(transparent)]

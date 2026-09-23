@@ -1,5 +1,6 @@
 pub mod app;
 pub mod auth;
+pub mod avatar;
 pub mod config;
 pub mod cookie;
 pub mod db;

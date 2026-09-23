@@ -1,36 +1,74 @@
 {% extends "base.html" %}
+{% import "_macros.html" as ui %}
 {% block title %}{{ username }}{% endblock %}
 {% block pagetitle %}{{ username }}{% endblock %}
 {% block content %}
+<section class="profile-header">
+{{ ui::avatar(&avatar, "xl") }}
+<div>
 <h1>{{ username }}</h1>
-<section class="card">
-<p class="stat-row">timezone: <b>{{ timezone }}</b> &middot; member since: <b>{{ member_since }}</b></p>
-<p class="stat-row">7d: <b>{{ pct_7d }}</b> &middot; 30d: <b>{{ pct_30d }}</b> &middot; streak: <b>{{ streak }}</b></p>
-<p class="stat-row">punishments: {{ punishments_pending }} pending &middot; {{ punishments_cleared }} cleared &middot; {{ punishments_waived }} waived</p>
-<p><a href="/leaderboard">leaderboard</a></p>
+<p class="hint tnum">Member since <span>{{ member_since }}</span></p>
+<div class="profile-stats">
+<span>7d <b>{{ pct_7d }}</b></span>
+<span>30d <b>{{ pct_30d }}</b></span>
+<span>streak <b>{{ streak }}</b></span>
+<span>pending <b>{{ punishments_pending }}</b></span>
+</div>
+</div>
+{% if is_self %}
+<a class="btn" href="/settings"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#pencil"/></svg>Edit profile</a>
+{% endif %}
 </section>
 <section class="card">
-<h2>routines</h2>
-<ul>
-{% for routine in routines %}
-<li>{{ routine.title }} &mdash; {{ routine.description }}</li>
-{% endfor %}
-</ul>
-</section>
-<section class="card">
-<h2>recent pins</h2>
-{% for pin in pins %}
-<div class="pin">
-<p><a href="/day?date={{ pin.due_date }}">{{ pin.summary }}</a></p>
-<ul>
-{% for link in pin.links %}
-<li><a href="{{ link }}">{{ link }}</a></li>
-{% endfor %}
-</ul>
-{% for photo in pin.photos %}
-<img src="{{ photo }}" alt="photo">
+<h2>Activity</h2>
+<div class="heatmap" role="img" aria-label="Completion heatmap for the last 12 weeks">
+{% for cell in heatmap %}
+<span class="hm-cell{% if cell.future %} is-future{% endif %}" data-l="{{ cell.level }}" title="{{ cell.label }}" aria-label="{{ cell.label }}"></span>
 {% endfor %}
 </div>
+</section>
+<section class="card">
+<h2>Routines</h2>
+{% if routines.is_empty() %}
+<div class="empty">
+<svg class="icon" aria-hidden="true"><use href="/static/icons.svg#repeat"/></svg>
+<p>No active routines yet.</p>
+<a class="btn btn-primary" href="/routines/new">New routine</a>
+</div>
+{% else %}
+<ul class="routine-list">
+{% for routine in routines %}
+<li class="routine-row">
+<div class="routine-info">
+<span class="routine-title">{{ routine.title }}</span>
+<span class="sched">{{ routine.description }}</span>
+</div>
+</li>
 {% endfor %}
+</ul>
+{% endif %}
+</section>
+<section class="card">
+<h2>Recent pins</h2>
+{% if pins.is_empty() %}
+<div class="empty">
+<svg class="icon" aria-hidden="true"><use href="/static/icons.svg#paperclip"/></svg>
+<p>No proof pinned yet.</p>
+</div>
+{% else %}
+<div class="pin-grid">
+{% for pin in pins %}
+<a class="pin-card" href="/day?date={{ pin.due_date }}">
+{% match pin.photos.first() %}
+{% when Some with (url) %}
+<img src="{{ url }}" alt="">
+{% when None %}
+{% endmatch %}
+<span class="pin-caption">{{ pin.summary }}</span>
+<span class="pin-date">{{ pin.due_date }}</span>
+</a>
+{% endfor %}
+</div>
+{% endif %}
 </section>
 {% endblock %}

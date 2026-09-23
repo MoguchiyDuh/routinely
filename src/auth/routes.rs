@@ -84,14 +84,16 @@ struct UserBody {
     id: i64,
     username: String,
     timezone: String,
+    avatar: serde_json::Value,
 }
 
 impl UserBody {
-    fn from_user(user: &session::SessionUser) -> Self {
+    fn from_user(user: &session::SessionUser, avatar: serde_json::Value) -> Self {
         return Self {
             id: user.id,
             username: user.username.clone(),
             timezone: user.timezone.clone(),
+            avatar,
         };
     }
 }
@@ -104,7 +106,8 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/auth/signup", post(api_signup))
         .route("/api/v1/auth/login", post(api_login))
         .route("/api/v1/auth/logout", post(api_logout))
-        .route("/api/v1/auth/me", get(api_me));
+        .route("/api/v1/auth/me", get(api_me))
+        .route("/api/v1/me", get(api_me));
 }
 
 async fn signup_page() -> Result<Response, RouteError> {
@@ -188,7 +191,8 @@ async fn api_signup(
     return match result {
         Ok(user) => {
             let token = session::create(&state.pool, user.id, state.config.session_ttl).await?;
-            let mut response = (StatusCode::OK, Json(UserBody::from_user(&user))).into_response();
+            let body = user_body(&state, &user).await?;
+            let mut response = (StatusCode::OK, Json(body)).into_response();
             set_cookie(
                 &mut response,
                 &session::build_cookie(&token, state.config.cookie_secure),
@@ -207,7 +211,8 @@ async fn api_login(
     return match result {
         Ok(user) => {
             let token = session::create(&state.pool, user.id, state.config.session_ttl).await?;
-            let mut response = (StatusCode::OK, Json(UserBody::from_user(&user))).into_response();
+            let body = user_body(&state, &user).await?;
+            let mut response = (StatusCode::OK, Json(body)).into_response();
             set_cookie(
                 &mut response,
                 &session::build_cookie(&token, state.config.cookie_secure),
@@ -231,8 +236,20 @@ async fn api_logout(
     return Ok(response);
 }
 
-async fn api_me(auth: ApiAuth) -> Json<UserBody> {
-    return Json(UserBody::from_user(&auth.0));
+async fn api_me(
+    axum::extract::State(state): axum::extract::State<AppState>,
+    auth: ApiAuth,
+) -> Result<Json<UserBody>, RouteError> {
+    let body = user_body(&state, &auth.0).await?;
+    return Ok(Json(body));
+}
+
+async fn user_body(state: &AppState, user: &session::SessionUser) -> Result<UserBody, RouteError> {
+    let avatar = crate::web::AvatarVm::load(&state.pool, user.id).await?;
+    return Ok(UserBody::from_user(
+        user,
+        crate::web::shell::avatar_json(&avatar),
+    ));
 }
 
 fn html_response<T: Template>(template: &T) -> Result<Response, RouteError> {

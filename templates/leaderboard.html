@@ -1,25 +1,43 @@
 {% extends "base.html" %}
+{% import "_macros.html" as ui %}
 {% block title %}Group{% endblock %}
 {% block pagetitle %}Group{% endblock %}
 {% block content %}
-<h1>leaderboard</h1>
-<div class="card table-card">
-<table>
-<thead>
-<tr><th>rank</th><th>user</th><th>7d</th><th>30d</th><th>streak (days)</th><th>pending</th></tr>
-</thead>
-<tbody>
-{% for row in rows %}
-<tr>
-<td class="rank">{{ row.rank }}</td>
-<td><a href="/users/{{ row.user_id }}">{{ row.username }}</a></td>
-<td>{{ row.pct_7d }}</td>
-<td>{{ row.pct_30d }}</td>
-<td>{{ row.streak }}</td>
-<td>{{ row.pending }}</td>
-</tr>
-{% endfor %}
-</tbody>
-</table>
+<header class="day-header">
+<h1>Group</h1>
+</header>
+{% if rows.is_empty() %}
+<div class="card empty">
+<svg class="icon" aria-hidden="true"><use href="/static/icons.svg#users"/></svg>
+<p>No members yet. Share the signup code to invite friends.</p>
+<a class="btn btn-primary" href="/settings">Open settings</a>
 </div>
+{% else %}
+<div class="rank-list">
+{% for row in rows %}
+<a class="rank-card {{ row.top_class }}" href="/users/{{ row.user_id }}">
+<span class="rank-num tnum">{{ row.rank }}</span>
+{{ ui::avatar(&row.avatar, "md") }}
+<span class="rank-body">
+<span class="rank-name">{{ row.username }}</span>
+<span class="rank-bars">
+<span class="bar-row"><span class="bar-label">7d</span><span class="bar"><span class="bar-fill" style="--v: {{ row.pct_7d }}"></span></span><span class="bar-val">{{ row.label_7d }}</span></span>
+<span class="bar-row"><span class="bar-label">30d</span><span class="bar"><span class="bar-fill" style="--v: {{ row.pct_30d }}"></span></span><span class="bar-val">{{ row.label_30d }}</span></span>
+</span>
+<span class="rank-meta">
+{% match row.streak_days %}
+{% when Some with (days) %}
+<span class="streak"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#flame"/></svg><span>{{ days }} day streak</span></span>
+{% when None %}
+<span>&mdash;</span>
+{% endmatch %}
+{% if row.pending > 0 %}
+<span class="rank-pending"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#gavel"/></svg><span>{{ row.pending }}</span></span>
+{% endif %}
+</span>
+</span>
+</a>
+{% endfor %}
+</div>
+{% endif %}
 {% endblock %}

@@ -16,6 +16,7 @@ use crate::recurrence::PeriodKind;
 use crate::score;
 use crate::store;
 
+use super::AvatarVm;
 use super::WebError;
 use super::WebResult;
 use super::html;
@@ -32,27 +33,37 @@ struct LeaderRowVm {
     rank: u32,
     user_id: i64,
     username: String,
-    pct_7d: String,
-    pct_30d: String,
-    streak: String,
+    avatar: AvatarVm,
+    pct_7d: u64,
+    pct_30d: u64,
+    label_7d: String,
+    label_30d: String,
+    streak_days: Option<u64>,
     pending: u64,
+    top_class: &'static str,
 }
 
 #[derive(Template)]
 #[template(path = "profile.html")]
 pub struct ProfilePage {
     pub shell: Shell,
+    avatar: AvatarVm,
     username: String,
-    timezone: String,
     member_since: String,
+    is_self: bool,
     pct_7d: String,
     pct_30d: String,
     streak: String,
     punishments_pending: u64,
-    punishments_cleared: u64,
-    punishments_waived: u64,
+    heatmap: Vec<HeatCellVm>,
     routines: Vec<ProfileRoutineJson>,
     pins: Vec<ProfilePinJson>,
+}
+
+struct HeatCellVm {
+    level: u8,
+    label: String,
+    future: bool,
 }
 
 #[derive(Serialize)]
@@ -141,19 +152,24 @@ async fn leaderboard_view(
 ) -> WebResult {
     let shell = Shell::load(&state, &auth, "group", &headers).await?;
     let rows = score::leaderboard_rows(&state.pool).await?;
-    let vms = rows
-        .iter()
-        .enumerate()
-        .map(|(index, row)| LeaderRowVm {
-            rank: u32::try_from(index + 1).unwrap_or(0),
+    let mut vms = Vec::new();
+    for (index, row) in rows.iter().enumerate() {
+        let avatar = AvatarVm::load(&state.pool, row.user_id).await?;
+        let rank = u32::try_from(index + 1).unwrap_or(0);
+        vms.push(LeaderRowVm {
+            rank,
             user_id: row.user_id,
             username: row.username.clone(),
-            pct_7d: pct_label(row.pct_7d),
-            pct_30d: pct_label(row.pct_30d),
-            streak: streak_label(row.streak),
+            avatar,
+            pct_7d: pct_value(row.pct_7d),
+            pct_30d: pct_value(row.pct_30d),
+            label_7d: pct_label(row.pct_7d),
+            label_30d: pct_label(row.pct_30d),
+            streak_days: row.streak,
             pending: row.pending,
-        })
-        .collect();
+            top_class: top_class(rank, row.pct_7d),
+        });
+    }
     let page = LeaderboardPage { shell, rows: vms };
     return Ok(html(&page)?);
 }
@@ -189,17 +205,27 @@ async fn profile_view(
         return Err(WebError::NotFound);
     };
     let shell = Shell::load(&state, &auth, "group", &headers).await?;
+    let avatar = AvatarVm::load(&state.pool, user_id).await?;
+    let heat_days = score::heatmap(&state.pool, user_id, &data.timezone).await?;
+    let heatmap = heat_days
+        .iter()
+        .map(|day| HeatCellVm {
+            level: day.level,
+            label: format!("{}: {} of {}", day.date, day.done, day.expected),
+            future: day.future,
+        })
+        .collect();
     let page = ProfilePage {
         shell,
+        avatar,
         username: data.username,
-        timezone: data.timezone,
         member_since: data.member_since,
+        is_self: auth.id == user_id,
         pct_7d: pct_label(data.stats.pct_7d),
         pct_30d: pct_label(data.stats.pct_30d),
         streak: streak_label(data.stats.streak),
         punishments_pending: data.punishments.pending,
-        punishments_cleared: data.punishments.cleared,
-        punishments_waived: data.punishments.waived,
+        heatmap,
         routines: data.routines,
         pins: data.pins,
     };
@@ -283,6 +309,25 @@ fn pct_label(pct: Option<f64>) -> String {
     return match pct {
         Some(value) => format!("{}%", (value * 100.0).round() as i64),
         None => "\u{2014}".to_string(),
+    };
+}
+
+fn pct_value(pct: Option<f64>) -> u64 {
+    return match pct {
+        Some(value) => u64::try_from((value * 100.0).round() as i64).unwrap_or(0),
+        None => 0,
+    };
+}
+
+fn top_class(rank: u32, pct_7d: Option<f64>) -> &'static str {
+    if pct_7d.is_none() {
+        return "";
+    }
+    return match rank {
+        1 => "top-1",
+        2 => "top-2",
+        3 => "top-3",
+        _ => "",
     };
 }
 

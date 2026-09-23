@@ -1981,6 +1981,9 @@ tbody tr:hover {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .sched {
@@ -2080,6 +2083,7 @@ tbody tr:hover {
 }
 
 .rank-name {
+  display: block;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -2191,7 +2195,7 @@ tbody tr:hover {
   grid-auto-columns: 1fr;
   gap: 4px;
   width: 100%;
-  max-width: 560px;
+  max-width: 360px;
 }
 
 .hm-cell {
@@ -2215,6 +2219,11 @@ tbody tr:hover {
 
 .hm-cell[data-l="4"] {
   background: var(--accent);
+}
+
+.hm-cell.is-future {
+  background: transparent;
+  border: 1px dashed var(--border);
 }
 
 .pin-grid {
@@ -2971,4 +2980,14 @@ tbody tr:hover {
   .heatmap {
     max-width: 100%;
   }
+}
+
+.avatar-picker,
+.swatches {
+  flex: 1 1 100%;
+  width: 100%;
+}
+
+.settings-form {
+  max-width: 420px;
 }

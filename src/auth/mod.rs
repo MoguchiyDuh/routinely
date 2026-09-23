@@ -37,6 +37,18 @@ pub enum AuthError {
     Db(#[from] sqlx::Error),
 }
 
+#[derive(Debug, Error)]
+pub enum PasswordChangeError {
+    #[error("current password is incorrect")]
+    WrongCurrent,
+    #[error("new password must be 8-128 characters")]
+    InvalidNew,
+    #[error(transparent)]
+    Hash(#[from] PasswordError),
+    #[error(transparent)]
+    Db(#[from] sqlx::Error),
+}
+
 pub async fn perform_signup(
     pool: &SqlitePool,
     config: &Config,
@@ -114,6 +126,36 @@ pub async fn perform_login(
         username: user.username,
         timezone: user.timezone,
     });
+}
+
+pub async fn change_password(
+    pool: &SqlitePool,
+    user_id: i64,
+    current_token: &str,
+    current_password: Option<&str>,
+    new_password: Option<&str>,
+) -> Result<(), PasswordChangeError> {
+    let (Some(current), Some(next)) = (current_password, new_password) else {
+        return Err(PasswordChangeError::InvalidNew);
+    };
+    let stored = session::password_hash_by_id(pool, user_id)
+        .await?
+        .ok_or(PasswordChangeError::WrongCurrent)?;
+    let valid = password::verify(current, &stored)?;
+    if !valid {
+        return Err(PasswordChangeError::WrongCurrent);
+    }
+    let new_hash = password::hash(next).map_err(|err| match err {
+        PasswordError::Length => PasswordChangeError::InvalidNew,
+        other => PasswordChangeError::Hash(other),
+    })?;
+    sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?")
+        .bind(&new_hash)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    session::delete_other_sessions(pool, user_id, current_token).await?;
+    return Ok(());
 }
 
 pub async fn sync_timezone(

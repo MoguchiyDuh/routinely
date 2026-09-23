@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
+use chrono::Datelike;
 use chrono::Days;
 use chrono::NaiveDate;
 use chrono::Weekday;
@@ -10,6 +11,7 @@ use sqlx::SqlitePool;
 use crate::recurrence::PeriodKind;
 use crate::recurrence::Schedule;
 use crate::recurrence::ScheduleKind;
+use crate::recurrence::effective_end;
 use crate::recurrence::mask_contains;
 use crate::recurrence::occurrences_in_range;
 use crate::recurrence::periods_in_range;
@@ -19,6 +21,7 @@ pub const WINDOW_7_DAYS: u64 = 7;
 pub const WINDOW_30_DAYS: u64 = 30;
 pub const STREAK_SCAN_DAYS: u64 = 365;
 pub const STREAK_CAP_DAYS: u64 = 3650;
+pub const HEATMAP_WEEKS: u64 = 12;
 
 const WEEKDAYS: [Weekday; 7] = [
     Weekday::Mon,
@@ -47,6 +50,15 @@ pub struct LeaderRow {
     pub pct_30d: Option<f64>,
     pub streak: Option<u64>,
     pub pending: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct HeatDay {
+    pub date: NaiveDate,
+    pub done: u32,
+    pub expected: u32,
+    pub level: u8,
+    pub future: bool,
 }
 
 pub fn window_start(today: NaiveDate, days: u64) -> Option<NaiveDate> {
@@ -431,4 +443,131 @@ fn period_name(period: PeriodKind) -> &'static str {
         PeriodKind::Month => "month",
         PeriodKind::Year => "year",
     };
+}
+
+pub fn heatmap_level(done: u32, expected: u32) -> u8 {
+    if expected == 0 {
+        return 0;
+    }
+    if done >= expected {
+        return 4;
+    }
+    let ratio = f64::from(done) / f64::from(expected);
+    if ratio < 0.25 {
+        return 1;
+    }
+    if ratio < 0.5 {
+        return 2;
+    }
+    return 3;
+}
+
+pub async fn heatmap(
+    pool: &SqlitePool,
+    user_id: i64,
+    timezone: &str,
+) -> Result<Vec<HeatDay>, sqlx::Error> {
+    let today = store::user_today(timezone);
+    let routines = store::all_routines(pool, user_id).await?;
+    let completions = completions_by_day(pool, user_id).await?;
+    let start = match week_start_of(today).checked_sub_days(Days::new((HEATMAP_WEEKS - 1) * 7)) {
+        Some(start) => start,
+        None => return Ok(Vec::new()),
+    };
+    let total_days = HEATMAP_WEEKS * 7;
+    let mut days = Vec::new();
+    for offset in 0..total_days {
+        let Some(date) = start.checked_add_days(Days::new(offset)) else {
+            continue;
+        };
+        let future = date > today;
+        let mut done = 0u32;
+        let mut expected = 0u32;
+        if !future {
+            for routine in &routines {
+                match routine_coverage(routine, date) {
+                    RoutineCoverage::Scheduled => {
+                        expected += 1;
+                        if completions.get(&(routine.id, date)).copied().unwrap_or(0) > 0 {
+                            done += 1;
+                        }
+                    }
+                    RoutineCoverage::PerCompletion => {
+                        let count = completions.get(&(routine.id, date)).copied().unwrap_or(0);
+                        done += count;
+                        expected += count;
+                    }
+                    RoutineCoverage::None => {}
+                }
+            }
+        }
+        days.push(HeatDay {
+            date,
+            done,
+            expected,
+            level: heatmap_level(done, expected),
+            future,
+        });
+    }
+    return Ok(days);
+}
+
+enum RoutineCoverage {
+    None,
+    Scheduled,
+    PerCompletion,
+}
+
+fn routine_coverage(routine: &store::RoutineRow, date: NaiveDate) -> RoutineCoverage {
+    let Some(schedule) = store::schedule_from_row(routine) else {
+        return RoutineCoverage::None;
+    };
+    if date < schedule.start_date {
+        return RoutineCoverage::None;
+    }
+    if let Some(end) = effective_end(&schedule)
+        && date > end
+    {
+        return RoutineCoverage::None;
+    }
+    return match schedule.kind {
+        ScheduleKind::Weekdays => {
+            if mask_contains(schedule.weekdays_mask, date.weekday()) {
+                RoutineCoverage::Scheduled
+            } else {
+                RoutineCoverage::None
+            }
+        }
+        ScheduleKind::Count => RoutineCoverage::PerCompletion,
+    };
+}
+
+async fn completions_by_day(
+    pool: &SqlitePool,
+    user_id: i64,
+) -> Result<HashMap<(i64, NaiveDate), u32>, sqlx::Error> {
+    let rows: Vec<(i64, String, i64)> = sqlx::query_as(
+        "SELECT o.routine_id, o.due_date, COUNT(*) \
+         FROM completions c \
+         JOIN occurrences o ON o.id = c.occurrence_id \
+         JOIN routines r ON r.id = o.routine_id \
+         WHERE r.user_id = ? \
+         GROUP BY o.routine_id, o.due_date",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+    let mut out = HashMap::new();
+    for (routine_id, due_date, count) in rows {
+        let Ok(date) = NaiveDate::parse_from_str(&due_date, "%Y-%m-%d") else {
+            continue;
+        };
+        out.insert((routine_id, date), u32::try_from(count).unwrap_or(0));
+    }
+    return Ok(out);
+}
+
+fn week_start_of(date: NaiveDate) -> NaiveDate {
+    let offset = u64::from(date.weekday().num_days_from_monday());
+    return date.checked_sub_days(Days::new(offset)).unwrap_or(date);
 }

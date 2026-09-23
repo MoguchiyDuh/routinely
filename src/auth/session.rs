@@ -113,6 +113,31 @@ pub async fn delete(pool: &SqlitePool, token: &str) -> Result<(), sqlx::Error> {
     return Ok(());
 }
 
+pub async fn delete_other_sessions(
+    pool: &SqlitePool,
+    user_id: i64,
+    keep_token: &str,
+) -> Result<(), sqlx::Error> {
+    let keep_hash = hash_token(keep_token);
+    sqlx::query("DELETE FROM sessions WHERE user_id = ? AND token_hash != ?")
+        .bind(user_id)
+        .bind(&keep_hash)
+        .execute(pool)
+        .await?;
+    return Ok(());
+}
+
+pub async fn password_hash_by_id(
+    pool: &SqlitePool,
+    user_id: i64,
+) -> Result<Option<String>, sqlx::Error> {
+    let row: Option<(String,)> = sqlx::query_as("SELECT password_hash FROM users WHERE id = ?")
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await?;
+    return Ok(row.map(|(hash,)| hash));
+}
+
 pub async fn find_user_by_username(
     pool: &SqlitePool,
     username: &str,
