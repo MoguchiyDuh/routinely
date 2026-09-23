@@ -1,53 +1,111 @@
-<form method="post" action="/routines" id="routine-form">
-{% if let Some(message) = error %}
-<p class="error">{{ message }}</p>
+<form method="post" action="{{ form.action }}" class="routine-form" id="routine-form">
+{% if let Some(message) = form.error %}
+<p class="form-error" role="alert">{{ message }}</p>
 {% endif %}
 <div class="field">
-<label for="routine-title">title</label>
-<input id="routine-title" name="title" maxlength="200" required>
+<label for="routine-title">Title</label>
+<input id="routine-title" name="title" maxlength="200" value="{{ form.title }}"{% if form.err_title.is_some() %} aria-invalid="true" aria-describedby="routine-title-error"{% endif %}>
+{% if let Some(message) = form.err_title %}
+<p class="field-error" id="routine-title-error">{{ message }}</p>
+{% endif %}
 </div>
 <div class="field">
-<label for="routine-notes">notes</label>
-<textarea id="routine-notes" name="notes"></textarea>
+<label for="routine-notes">Notes</label>
+<textarea id="routine-notes" name="notes">{{ form.notes }}</textarea>
 </div>
-<fieldset>
-<legend>kind</legend>
-<label><input type="radio" name="kind" value="weekdays" checked> weekdays</label>
-<label><input type="radio" name="kind" value="count"> count</label>
+<fieldset class="segmented">
+<legend>Schedule kind</legend>
+<label><input type="radio" name="kind" value="weekdays"{% if form.kind_weekdays %} checked{% endif %}{% if form.err_kind.is_some() %} aria-invalid="true" aria-describedby="routine-kind-error"{% endif %}>On specific days</label>
+<label><input type="radio" name="kind" value="count"{% if form.kind_count %} checked{% endif %}{% if form.err_kind.is_some() %} aria-invalid="true" aria-describedby="routine-kind-error"{% endif %}>Times per period</label>
 </fieldset>
+{% if let Some(message) = form.err_kind %}
+<p class="field-error" id="routine-kind-error">{{ message }}</p>
+{% endif %}
+<div class="when-weekdays">
 <fieldset>
-<legend>weekdays</legend>
-<label><input type="checkbox" name="monday"> mon</label>
-<label><input type="checkbox" name="tuesday"> tue</label>
-<label><input type="checkbox" name="wednesday"> wed</label>
-<label><input type="checkbox" name="thursday"> thu</label>
-<label><input type="checkbox" name="friday"> fri</label>
-<label><input type="checkbox" name="saturday"> sat</label>
-<label><input type="checkbox" name="sunday"> sun</label>
+<legend>Weekdays</legend>
+<div class="chips">
+<label class="chip"><input type="checkbox" name="monday"{% if form.monday %} checked{% endif %}{% if form.err_weekdays.is_some() %} aria-invalid="true" aria-describedby="routine-weekdays-error"{% endif %}><span>Mon</span></label>
+<label class="chip"><input type="checkbox" name="tuesday"{% if form.tuesday %} checked{% endif %}{% if form.err_weekdays.is_some() %} aria-invalid="true" aria-describedby="routine-weekdays-error"{% endif %}><span>Tue</span></label>
+<label class="chip"><input type="checkbox" name="wednesday"{% if form.wednesday %} checked{% endif %}{% if form.err_weekdays.is_some() %} aria-invalid="true" aria-describedby="routine-weekdays-error"{% endif %}><span>Wed</span></label>
+<label class="chip"><input type="checkbox" name="thursday"{% if form.thursday %} checked{% endif %}{% if form.err_weekdays.is_some() %} aria-invalid="true" aria-describedby="routine-weekdays-error"{% endif %}><span>Thu</span></label>
+<label class="chip"><input type="checkbox" name="friday"{% if form.friday %} checked{% endif %}{% if form.err_weekdays.is_some() %} aria-invalid="true" aria-describedby="routine-weekdays-error"{% endif %}><span>Fri</span></label>
+<label class="chip"><input type="checkbox" name="saturday"{% if form.saturday %} checked{% endif %}{% if form.err_weekdays.is_some() %} aria-invalid="true" aria-describedby="routine-weekdays-error"{% endif %}><span>Sat</span></label>
+<label class="chip"><input type="checkbox" name="sunday"{% if form.sunday %} checked{% endif %}{% if form.err_weekdays.is_some() %} aria-invalid="true" aria-describedby="routine-weekdays-error"{% endif %}><span>Sun</span></label>
+</div>
+{% if let Some(message) = form.err_weekdays %}
+<p class="field-error" id="routine-weekdays-error">{{ message }}</p>
+{% endif %}
 </fieldset>
-<fieldset>
-<legend>count</legend>
-<label>per period <input type="number" name="per_period" min="1"></label>
-<label>period
-<select name="period">
-<option value=""></option>
-<option value="day">day</option>
-<option value="week">week</option>
-<option value="month">month</option>
-<option value="year">year</option>
+<div class="preset-row">
+<button type="button" class="btn btn-sm" data-preset="weekdays">Weekdays</button>
+<button type="button" class="btn btn-sm" data-preset="weekends">Weekends</button>
+<button type="button" class="btn btn-sm" data-preset="all">Every day</button>
+</div>
+</div>
+<div class="when-count">
+<div class="field">
+<label for="routine-per-period">Times per period</label>
+<input id="routine-per-period" name="per_period" type="number" min="1" placeholder="e.g. 3" value="{{ form.per_period }}"{% if form.err_per_period.is_some() %} aria-invalid="true" aria-describedby="routine-per-period-error"{% endif %}>
+{% if let Some(message) = form.err_per_period %}
+<p class="field-error" id="routine-per-period-error">{{ message }}</p>
+{% endif %}
+</div>
+<div class="field">
+<label for="routine-period">Period</label>
+<select id="routine-period" name="period"{% if form.err_period.is_some() %} aria-invalid="true" aria-describedby="routine-period-error"{% endif %}>
+<option value="day"{% if form.period_day %} selected{% endif %}>day</option>
+<option value="week"{% if form.period_week %} selected{% endif %}>week</option>
+<option value="month"{% if form.period_month %} selected{% endif %}>month</option>
+<option value="year"{% if form.period_year %} selected{% endif %}>year</option>
 </select>
-</label>
+{% if let Some(message) = form.err_period %}
+<p class="field-error" id="routine-period-error">{{ message }}</p>
+{% endif %}
+</div>
+</div>
+<fieldset class="segmented">
+<legend>Duration</legend>
+<label><input type="radio" name="duration" value="forever"{% if form.duration_forever %} checked{% endif %}>Forever</label>
+<label><input type="radio" name="duration" value="iterations"{% if form.duration_iterations %} checked{% endif %}>For N weeks</label>
+<label><input type="radio" name="duration" value="end_date"{% if form.duration_end_date %} checked{% endif %}>Until date</label>
 </fieldset>
-<fieldset>
-<legend>duration</legend>
-<label><input type="radio" name="duration" value="forever" checked> forever</label>
-<label><input type="radio" name="duration" value="iterations"> iterations <input type="number" name="iterations" min="1"></label>
-<label><input type="radio" name="duration" value="end_date"> until <input type="date" name="end_date"></label>
-</fieldset>
-<fieldset>
-<legend>time</legend>
-<label>time of day <input type="time" name="time_of_day"></label>
-<label>time end <input type="time" name="time_end"></label>
-</fieldset>
-<button type="submit">create routine</button>
+<div class="when-iterations">
+<div class="field">
+<label for="routine-iterations">Weeks</label>
+<input id="routine-iterations" name="iterations" type="number" min="1" placeholder="e.g. 8" value="{{ form.iterations }}"{% if form.err_iterations.is_some() %} aria-invalid="true" aria-describedby="routine-iterations-error"{% endif %}>
+{% if let Some(message) = form.err_iterations %}
+<p class="field-error" id="routine-iterations-error">{{ message }}</p>
+{% endif %}
+</div>
+</div>
+<div class="when-end-date">
+<div class="field">
+<label for="routine-end-date">End date</label>
+<input id="routine-end-date" name="end_date" type="date" value="{{ form.end_date }}"{% if form.err_end_date.is_some() %} aria-invalid="true" aria-describedby="routine-end-date-error"{% endif %}>
+{% if let Some(message) = form.err_end_date %}
+<p class="field-error" id="routine-end-date-error">{{ message }}</p>
+{% endif %}
+</div>
+</div>
+<div class="field">
+<label for="routine-time-of-day">Start time <span class="hint">optional</span></label>
+<input id="routine-time-of-day" name="time_of_day" type="time" value="{{ form.time_of_day }}"{% if form.err_time_of_day.is_some() %} aria-invalid="true" aria-describedby="routine-time-of-day-error"{% endif %}>
+{% if let Some(message) = form.err_time_of_day %}
+<p class="field-error" id="routine-time-of-day-error">{{ message }}</p>
+{% endif %}
+</div>
+<div class="field">
+<label for="routine-time-end">End time <span class="hint">optional</span></label>
+<input id="routine-time-end" name="time_end" type="time" value="{{ form.time_end }}"{% if form.err_time_end.is_some() %} aria-invalid="true" aria-describedby="routine-time-end-error"{% endif %}>
+{% if let Some(message) = form.err_time_end %}
+<p class="field-error" id="routine-time-end-error">{{ message }}</p>
+{% endif %}
+</div>
+<div class="routine-meta">
+<button type="submit" class="btn btn-primary">{{ form.submit_label }}</button>
+{% if form.cancel %}
+<a class="btn" href="/routines">Cancel</a>
+{% endif %}
+</div>
 </form>

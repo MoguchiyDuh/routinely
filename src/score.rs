@@ -82,6 +82,31 @@ pub async fn stats_for_user(
     });
 }
 
+pub async fn routine_window_pcts(
+    pool: &SqlitePool,
+    user_id: i64,
+    timezone: &str,
+    routines: &[store::RoutineRow],
+) -> Result<Vec<Option<f64>>, sqlx::Error> {
+    let today = store::user_today(timezone);
+    let Some(start) = window_start(today, WINDOW_30_DAYS) else {
+        return Ok(routines.iter().map(|_| None).collect());
+    };
+    let satisfied = satisfied_weekdays(pool, user_id, start, today).await?;
+    let counts = period_counts(pool, user_id).await?;
+    let mut out = Vec::new();
+    for routine in routines {
+        out.push(window_pct(
+            std::slice::from_ref(routine),
+            &satisfied,
+            &counts,
+            start,
+            today,
+        ));
+    }
+    return Ok(out);
+}
+
 pub async fn leaderboard_rows(pool: &SqlitePool) -> Result<Vec<LeaderRow>, sqlx::Error> {
     let users: Vec<(i64, String, String)> =
         sqlx::query_as("SELECT id, username, timezone FROM users ORDER BY id")

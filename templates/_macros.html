@@ -63,3 +63,16 @@
 </details>
 {% endif %}
 {%- endmacro %}
+{% macro routine_card(item) -%}
+<article class="card routine-item">
+<div class="card-header"><h2>{{ item.title }}</h2></div>
+<p class="sched">{{ item.schedule }}</p>
+{% if let Some(pct) = item.pct_30d %}
+<p class="sched">{{ pct }} last 30 days</p>
+{% endif %}
+<div class="routine-meta">
+<a class="btn btn-sm" href="/routines/{{ item.id }}/edit"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#pencil"/></svg>Edit</a>
+<form method="post" action="/routines/{{ item.id }}/archive"><button type="submit" class="btn btn-sm"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#archive"/></svg>Archive</button></form>
+</div>
+</article>
+{%- endmacro %}

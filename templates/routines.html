@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}Routines{% endblock %}
+{% block pagetitle %}Routines{% endblock %}
+{% block content %}
+<h1>Routines</h1>
+{% if active.is_empty() && finished.is_empty() && archived.is_empty() %}
+<div class="card">
+<div class="empty">
+<svg class="icon" aria-hidden="true"><use href="/static/icons.svg#repeat"/></svg>
+<p>No routines yet</p>
+<a class="btn btn-primary" href="/routines/new"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#plus"/></svg>New routine</a>
+</div>
+</div>
+{% else %}
+<p class="preset-row"><a class="btn btn-primary" href="/routines/new"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#plus"/></svg>New routine</a></p>
+<section aria-labelledby="active-routines-title">
+<h2 class="section-title" id="active-routines-title">Active</h2>
+{% if active.is_empty() %}
+<p class="empty">No active routines</p>
+{% else %}
+<div class="routine-list">
+{% for item in active %}
+{{ ui::routine_card(item) }}
+{% endfor %}
+</div>
+{% endif %}
+</section>
+{% if !finished.is_empty() %}
+<section aria-labelledby="finished-routines-title">
+<h2 class="section-title" id="finished-routines-title">Finished</h2>
+<div class="routine-list">
+{% for item in finished %}
+{{ ui::routine_card(item) }}
+{% endfor %}
+</div>
+</section>
+{% endif %}
+{% if !archived.is_empty() %}
+<details class="archived">
+<summary><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#chevron-down"/></svg>Archived</summary>
+<div class="routine-list">
+{% for item in archived %}
+{{ ui::routine_card(item) }}
+{% endfor %}
+</div>
+</details>
+{% endif %}
+{% endif %}
+{% endblock %}

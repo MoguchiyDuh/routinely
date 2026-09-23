@@ -247,9 +247,10 @@ async fn build_profile(
     let punishments = punishment_counts(pool, id).await?;
     let pins = recent_pins(pool, id).await?;
     let today = store::user_today(&timezone);
+    let child_ids = store::chain_child_ids(pool, id).await?;
     let mut routine_payloads = Vec::new();
-    for routine in routines {
-        let description = match store::schedule_from_row(&routine) {
+    for routine in routines.iter().filter(|r| !child_ids.contains(&r.id)) {
+        let description = match store::schedule_from_row(routine) {
             Some(schedule) => score::describe_schedule(
                 &schedule,
                 routine.time_of_day.as_deref(),
@@ -262,7 +263,7 @@ async fn build_profile(
             id: routine.id,
             title: routine.title.clone(),
             description,
-            schedule: schedule_json(&routine),
+            schedule: schedule_json(routine),
         });
     }
     let member_since = created_at.get(..10).unwrap_or(&created_at).to_string();

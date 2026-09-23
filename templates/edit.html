@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Edit routine{% endblock %}
+{% block pagetitle %}Edit routine{% endblock %}
+{% block content %}
+<h1>Edit routine</h1>
+<p class="hint">Schedule changes apply from today; past days keep the old schedule.</p>
+<div class="card narrow">
+{% include "_routine_form.html" %}
+</div>
+{% endblock %}

@@ -551,6 +551,282 @@ pub async fn archive_routine(
     return Ok(result.rows_affected() > 0);
 }
 
+#[derive(Debug)]
+pub enum UpdateRoutineError {
+    NotFound,
+    Conflict,
+    Db(sqlx::Error),
+}
+
+impl From<sqlx::Error> for UpdateRoutineError {
+    fn from(value: sqlx::Error) -> Self {
+        return UpdateRoutineError::Db(value);
+    }
+}
+
+fn kind_to_str(kind: ScheduleKind) -> &'static str {
+    return match kind {
+        ScheduleKind::Weekdays => "weekdays",
+        ScheduleKind::Count => "count",
+    };
+}
+
+fn period_to_str(period: PeriodKind) -> &'static str {
+    return match period {
+        PeriodKind::Day => "day",
+        PeriodKind::Week => "week",
+        PeriodKind::Month => "month",
+        PeriodKind::Year => "year",
+    };
+}
+
+pub async fn is_chain_head(pool: &SqlitePool, routine_id: i64) -> Result<bool, sqlx::Error> {
+    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM routines WHERE previous_id = ?")
+        .bind(routine_id)
+        .fetch_one(pool)
+        .await?;
+    return Ok(count == 0);
+}
+
+pub async fn routine_heads(
+    conn: &mut SqliteConnection,
+    user_id: i64,
+) -> Result<Vec<RoutineRow>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, RoutineRecord>(
+        "SELECT r.id, r.user_id, r.title, r.notes, r.kind, r.weekdays_mask, r.period, r.per_period, r.iterations, r.start_date, r.end_date, r.time_of_day, r.time_end, r.archived_at \
+         FROM routines r WHERE r.user_id = ? AND r.archived_at IS NULL \
+         AND NOT EXISTS (SELECT 1 FROM routines s WHERE s.previous_id = r.id) ORDER BY r.id",
+    )
+    .bind(user_id)
+    .fetch_all(&mut *conn)
+    .await?;
+    return Ok(rows.into_iter().map(routine_from_row).collect());
+}
+
+pub async fn archived_routine_heads(
+    pool: &SqlitePool,
+    user_id: i64,
+) -> Result<Vec<RoutineRow>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, RoutineRecord>(
+        "SELECT r.id, r.user_id, r.title, r.notes, r.kind, r.weekdays_mask, r.period, r.per_period, r.iterations, r.start_date, r.end_date, r.time_of_day, r.time_end, r.archived_at \
+         FROM routines r WHERE r.user_id = ? AND r.archived_at IS NOT NULL \
+         AND NOT EXISTS (SELECT 1 FROM routines s WHERE s.previous_id = r.id) ORDER BY r.id",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+    return Ok(rows.into_iter().map(routine_from_row).collect());
+}
+
+pub async fn chain_child_ids(pool: &SqlitePool, user_id: i64) -> Result<Vec<i64>, sqlx::Error> {
+    let rows: Vec<(i64,)> = sqlx::query_as(
+        "SELECT previous_id FROM routines WHERE previous_id IS NOT NULL AND user_id = ?",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+    return Ok(rows.into_iter().map(|(id,)| id).collect());
+}
+
+pub async fn update_routine(
+    pool: &SqlitePool,
+    user_id: i64,
+    routine_id: i64,
+    spec: &RoutineSpec,
+    today: NaiveDate,
+) -> Result<i64, UpdateRoutineError> {
+    let mut tx = pool.begin().await?;
+    let row = sqlx::query_as::<_, RoutineRecord>(
+        "SELECT id, user_id, title, notes, kind, weekdays_mask, period, per_period, iterations, start_date, end_date, time_of_day, time_end, archived_at \
+         FROM routines WHERE id = ?",
+    )
+    .bind(routine_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some(record) = row else {
+        return Err(UpdateRoutineError::NotFound);
+    };
+    let old = routine_from_row(record);
+    if old.user_id != user_id {
+        return Err(UpdateRoutineError::NotFound);
+    }
+    let (child_count,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM routines WHERE previous_id = ?")
+            .bind(routine_id)
+            .fetch_one(&mut *tx)
+            .await?;
+    if child_count > 0 || old.archived_at.is_some() {
+        return Err(UpdateRoutineError::Conflict);
+    }
+    let new_kind = kind_to_str(spec.kind);
+    let schedule_changed = old.kind != new_kind
+        || old.weekdays_mask != spec.weekdays_mask
+        || old.period != spec.period
+        || old.per_period != spec.per_period
+        || old.iterations != spec.iterations
+        || old.end_date != spec.end_date;
+    if !schedule_changed {
+        sqlx::query(
+            "UPDATE routines SET title = ?, notes = ?, time_of_day = ?, time_end = ? WHERE id = ?",
+        )
+        .bind(&spec.title)
+        .bind(&spec.notes)
+        .bind(&spec.time_of_day)
+        .bind(&spec.time_end)
+        .bind(routine_id)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        return Ok(old.id);
+    }
+    let same_count_period = old.kind == "count"
+        && spec.kind == ScheduleKind::Count
+        && old.period.is_some()
+        && old.period == spec.period;
+    let cutover = if same_count_period {
+        match spec.period.and_then(|period| period_bounds(today, period)) {
+            Some((start, _)) => start,
+            None => today,
+        }
+    } else {
+        today
+    };
+    let Some(old_start) = old.start_date else {
+        return Err(UpdateRoutineError::Conflict);
+    };
+    if cutover <= old_start {
+        sqlx::query(
+            "UPDATE routines SET title = ?, notes = ?, kind = ?, weekdays_mask = ?, period = ?, per_period = ?, iterations = ?, end_date = ?, time_of_day = ?, time_end = ? WHERE id = ?",
+        )
+        .bind(&spec.title)
+        .bind(&spec.notes)
+        .bind(new_kind)
+        .bind(spec.weekdays_mask.map(i64::from))
+        .bind(spec.period.map(period_to_str))
+        .bind(spec.per_period.map(i64::from))
+        .bind(spec.iterations.map(i64::from))
+        .bind(spec.end_date.map(|d| d.to_string()))
+        .bind(&spec.time_of_day)
+        .bind(&spec.time_end)
+        .bind(routine_id)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        return Ok(old.id);
+    }
+    let old_boundary = if old.kind == "count" && !same_count_period {
+        match old.period.and_then(|period| period_bounds(today, period)) {
+            Some((start, _)) => start.min(cutover),
+            None => cutover,
+        }
+    } else {
+        cutover
+    };
+    let Some(old_end) = old_boundary.pred_opt() else {
+        return Err(UpdateRoutineError::Conflict);
+    };
+    sqlx::query("UPDATE routines SET end_date = ? WHERE id = ?")
+        .bind(old_end.to_string())
+        .bind(old.id)
+        .execute(&mut *tx)
+        .await?;
+    let new_id: i64 = sqlx::query_scalar(
+        "INSERT INTO routines (user_id, title, notes, kind, weekdays_mask, period, per_period, iterations, start_date, end_date, time_of_day, time_end, created_at, previous_id) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+    )
+    .bind(user_id)
+    .bind(&spec.title)
+    .bind(&spec.notes)
+    .bind(new_kind)
+    .bind(spec.weekdays_mask.map(i64::from))
+    .bind(spec.period.map(period_to_str))
+    .bind(spec.per_period.map(i64::from))
+    .bind(spec.iterations.map(i64::from))
+    .bind(cutover.to_string())
+    .bind(spec.end_date.map(|d| d.to_string()))
+    .bind(&spec.time_of_day)
+    .bind(&spec.time_end)
+    .bind(Utc::now().to_rfc3339())
+    .bind(old.id)
+    .fetch_one(&mut *tx)
+    .await?;
+    sqlx::query("UPDATE occurrences SET routine_id = ? WHERE routine_id = ? AND due_date >= ?")
+        .bind(new_id)
+        .bind(old.id)
+        .bind(cutover.to_string())
+        .execute(&mut *tx)
+        .await?;
+    let moved: Vec<(i64, String, Option<String>, bool)> = sqlx::query_as(
+        "SELECT o.id, o.due_date, o.period_start, (c.id IS NOT NULL) \
+         FROM occurrences o LEFT JOIN completions c ON c.occurrence_id = o.id \
+         WHERE o.routine_id = ? ORDER BY o.id",
+    )
+    .bind(new_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    for (occurrence_id, due_date, period_start, completed) in moved {
+        let Ok(day) = NaiveDate::parse_from_str(&due_date, "%Y-%m-%d") else {
+            continue;
+        };
+        if spec.kind == ScheduleKind::Weekdays {
+            if old.kind != new_kind {
+                if completed {
+                    if period_start.is_some() {
+                        sqlx::query("UPDATE occurrences SET period_start = NULL WHERE id = ?")
+                            .bind(occurrence_id)
+                            .execute(&mut *tx)
+                            .await?;
+                    }
+                } else {
+                    sqlx::query("DELETE FROM occurrences WHERE id = ?")
+                        .bind(occurrence_id)
+                        .execute(&mut *tx)
+                        .await?;
+                }
+            } else {
+                let excluded = !mask_contains(spec.weekdays_mask.unwrap_or(0), day.weekday());
+                if excluded {
+                    if completed {
+                        if period_start.is_some() {
+                            sqlx::query("UPDATE occurrences SET period_start = NULL WHERE id = ?")
+                                .bind(occurrence_id)
+                                .execute(&mut *tx)
+                                .await?;
+                        }
+                    } else {
+                        sqlx::query("DELETE FROM occurrences WHERE id = ?")
+                            .bind(occurrence_id)
+                            .execute(&mut *tx)
+                            .await?;
+                    }
+                }
+            }
+        } else {
+            let expected = spec
+                .period
+                .and_then(|period| period_bounds(day, period))
+                .map(|(start, _)| start)
+                .map(|d| d.to_string());
+            if period_start != expected {
+                if completed {
+                    sqlx::query("UPDATE occurrences SET period_start = ? WHERE id = ?")
+                        .bind(expected)
+                        .bind(occurrence_id)
+                        .execute(&mut *tx)
+                        .await?;
+                } else {
+                    sqlx::query("DELETE FROM occurrences WHERE id = ?")
+                        .bind(occurrence_id)
+                        .execute(&mut *tx)
+                        .await?;
+                }
+            }
+        }
+    }
+    tx.commit().await?;
+    return Ok(new_id);
+}
+
 pub async fn materialize(
     conn: &mut SqliteConnection,
     user_id: i64,

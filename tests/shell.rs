@@ -305,7 +305,7 @@ async fn ssr_redirect_sets_flash_cookie_and_next_page_clears_it() {
     )
     .await;
     assert_eq!(response.status, 303, "routine create failed: {response:?}");
-    assert_eq!(response.header("location").as_deref(), Some("/day"));
+    assert_eq!(response.header("location").as_deref(), Some("/routines"));
     let flash_cookies: Vec<String> = response
         .set_cookies()
         .into_iter()
