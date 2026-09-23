@@ -49,7 +49,6 @@
   --text-lg: 1rem;
   --text-xl: 1.2rem;
   --text-2xl: 1.45rem;
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-2: 0 4px 12px rgba(0, 0, 0, 0.4);
   --shadow-3: 0 12px 32px rgba(0, 0, 0, 0.5);
   --z-topbar: 30;
@@ -268,6 +267,10 @@ main {
 
 .page-wide {
   max-width: 1280px;
+}
+
+.page-narrow {
+  max-width: 560px;
 }
 
 .brand {
@@ -758,33 +761,6 @@ main {
   padding: 0;
 }
 
-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--sp-2);
-  min-height: 34px;
-  padding: 0 14px;
-  border: 1px solid var(--accent);
-  border-radius: var(--radius-sm);
-  background: var(--accent);
-  color: var(--accent-contrast);
-  font: inherit;
-  font-size: var(--text-md);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-button:hover {
-  background: var(--accent-strong);
-  border-color: var(--accent-strong);
-}
-
-button:focus-visible {
-  outline: 2px solid var(--text);
-  outline-offset: 2px;
-}
-
 :where(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="submit"]):not([type="button"]), textarea, select) {
   width: 100%;
   padding: 8px 10px;
@@ -832,13 +808,6 @@ input[type="radio"] {
   height: 18px;
   accent-color: var(--accent);
   flex: none;
-}
-
-input.check {
-  width: 24px;
-  height: 24px;
-  accent-color: var(--success);
-  cursor: pointer;
 }
 
 input[type="file"] {
@@ -890,8 +859,7 @@ input[type="file"]::file-selector-button {
   color: var(--muted);
 }
 
-.form-error,
-.error {
+.form-error {
   margin: 0 0 var(--sp-4);
   padding: 10px var(--sp-3);
   border: 1px solid rgba(255, 107, 98, 0.4);
@@ -1135,24 +1103,6 @@ a.chip:focus-visible {
   color: var(--text-2);
 }
 
-.dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: var(--radius-full);
-  background: currentColor;
-  flex: none;
-}
-
-.user-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: var(--radius-full);
-  background: var(--user-color, var(--accent));
-  flex: none;
-}
-
 .badge {
   display: inline-flex;
   align-items: center;
@@ -1163,41 +1113,6 @@ a.chip:focus-visible {
   font-size: 11px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-}
-
-.table-wrap {
-  overflow-x: auto;
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--text-md);
-}
-
-th {
-  padding: var(--sp-2) 10px;
-  border-bottom: 1px solid var(--border-strong);
-  text-align: left;
-  font-size: var(--text-xs);
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--muted);
-  white-space: nowrap;
-}
-
-td {
-  padding: 10px;
-  border-bottom: 1px solid var(--border);
-}
-
-tbody tr:last-child td {
-  border-bottom: 0;
-}
-
-tbody tr:hover {
-  background: var(--surface-2);
 }
 
 .auth {
@@ -1685,8 +1600,7 @@ tbody tr:hover {
 }
 
 .row-form input[type="text"],
-.row-form input:not([type]),
-.row-form .flex-1 {
+.row-form input:not([type]) {
   flex: 1;
   min-width: 140px;
 }
@@ -2521,90 +2435,7 @@ tbody tr:hover {
   outline-offset: 2px;
 }
 
-.pager {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--sp-3);
-  margin: 0 0 var(--sp-4);
-}
-
-.pager .current {
-  color: var(--text);
-  font-weight: 600;
-}
-
-.narrow {
-  max-width: 420px;
-  margin-left: auto;
-  margin-right: auto;
-}
-
-.compact button {
-  min-height: 28px;
-  padding: 0 10px;
-  font-size: var(--text-sm);
-}
-
-.routine-card {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--muted);
-  border-radius: var(--radius-md);
-  padding: var(--sp-3) 14px;
-  margin-bottom: 10px;
-}
-
-.routine-card.status-completed {
-  border-left-color: var(--success);
-}
-
-.routine-card.status-missed {
-  border-left-color: var(--danger);
-}
-
-.routine-card.status-open {
-  border-left-color: var(--warning);
-}
-
-.routine-card .status {
-  margin: 0;
-  font-size: var(--text-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted);
-}
-
-.routine-card.status-completed .status {
-  color: var(--success);
-}
-
-.routine-card.status-missed .status {
-  color: var(--danger);
-}
-
-.routine-card.status-open .status {
-  color: var(--warning);
-}
-
-.routine-card form {
-  margin: var(--sp-2) 0 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-2);
-  align-items: center;
-}
-
-.time-label,
-.progress,
-.evidence {
-  margin: 2px 0;
-  font-size: var(--text-sm);
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.pin {
+.entry {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
@@ -2636,34 +2467,6 @@ tbody tr:hover {
   object-fit: cover;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-}
-
-.stat-row {
-  margin: 2px 0;
-  font-size: var(--text-md);
-  color: var(--muted);
-}
-
-.stat-row b {
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-}
-
-.day-cell {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: var(--sp-2);
-  min-height: 96px;
-}
-
-.day-cell h2 {
-  font-size: var(--text-sm);
-  margin: 0 0 var(--sp-2);
-}
-
-.day-cell h2 a {
-  color: var(--text);
 }
 
 .entry {
@@ -2699,14 +2502,8 @@ tbody tr:hover {
   border-left-color: var(--warning);
 }
 
-.entry .user,
-.entry .time,
-.entry .status {
+.entry .time {
   color: var(--muted);
-}
-
-.entry .planned {
-  color: var(--warning);
 }
 
 .entry form {
@@ -2997,24 +2794,29 @@ tbody tr:hover {
     width: 44px;
     min-width: 44px;
   }
+  .toast-close {
+    width: 44px;
+    height: 44px;
+  }
+  .date-strip .btn-icon {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+  }
   .chip {
     min-height: 44px;
   }
-  input.check {
-    width: 28px;
-    height: 28px;
-  }
   .tick-btn {
-    width: 32px;
-    height: 32px;
-    min-width: 32px;
-    min-height: 32px;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
   }
   .tl-block .tick-btn {
-    width: 26px;
-    height: 26px;
-    min-width: 26px;
-    min-height: 26px;
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    min-height: 28px;
   }
   .date-strip input[type="date"] {
     min-height: 44px;

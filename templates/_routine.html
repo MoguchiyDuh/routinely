@@ -16,7 +16,7 @@
 {% endif %}
 {% if rows.is_empty() && blocks.is_empty() %}
 <div class="empty">
-<svg class="icon" aria-hidden="true"><use href="/static/icons.svg#calendar-days"/></svg>
+<svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#calendar-days"/></svg>
 <p>Nothing scheduled for this day.</p>
 </div>
 {% endif %}
@@ -28,7 +28,7 @@
 {% include "_block.html" %}
 {% endfor %}
 {% for m in markers %}
-<span class="tl-marker{% if m.done %} is-done{% endif %}{% if m.overdue %} is-overdue{% endif %}" style="--start: {{ m.start_min }}"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#clock"/></svg><span class="tnum">{{ m.time_label }}</span> {{ m.title }}</span>
+<span class="tl-marker{% if m.done %} is-done{% endif %}{% if m.overdue %} is-overdue{% endif %}" style="--start: {{ m.start_min }}"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#clock"/></svg><span class="tnum">{{ m.time_label }}</span> {{ m.title }}</span>
 {% endfor %}
 {% if is_today %}
 <div class="now-line"><span class="now-time"></span></div>
@@ -36,7 +36,7 @@
 </div>
 {% else %}
 <div class="empty">
-<svg class="icon" aria-hidden="true"><use href="/static/icons.svg#repeat"/></svg>
+<svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#repeat"/></svg>
 <p>No routines yet.</p>
 <a class="btn btn-primary" href="/routines/new">Create your first routine</a>
 </div>

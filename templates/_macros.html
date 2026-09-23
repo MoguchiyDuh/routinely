@@ -1,27 +1,27 @@
 {% macro avatar(a, size) -%}
 <span class="avatar avatar-{{ size }}" data-color="{{ a.color }}" aria-hidden="true">
 {%- if a.kind == "photo" %}{% match a.photo_url %}{% when Some with (url) %}<img src="{{ url }}" alt="">{% when None %}{% endmatch %}
-{%- else if a.kind == "icon" %}{% match a.icon %}{% when Some with (icon) %}<svg class="icon" aria-hidden="true"><use href="/static/icons.svg#{{ icon }}"/></svg>{% when None %}{% endmatch %}
+{%- else if a.kind == "icon" %}{% match a.icon %}{% when Some with (icon) %}<svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#{{ icon }}"/></svg>{% when None %}{% endmatch %}
 {%- else %}{{ a.initials }}
 {%- endif %}</span>
 {%- endmacro %}
 {% macro menu_panel(user_id) -%}
 <div class="menu-panel">
-<a class="menu-item" href="/users/{{ user_id }}"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#user"/></svg>Profile</a>
-<a class="menu-item" href="/settings"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#settings"/></svg>Settings</a>
-<form method="post" action="/logout"><button type="submit" class="menu-item"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#log-out"/></svg>Log out</button></form>
+<a class="menu-item" href="/users/{{ user_id }}"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#user"/></svg>Profile</a>
+<a class="menu-item" href="/settings"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#settings"/></svg>Settings</a>
+<form method="post" action="/logout"><button type="submit" class="menu-item"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#log-out"/></svg>Log out</button></form>
 </div>
 {%- endmacro %}
 {% macro status_pill(pill_class, word, icon) -%}
-<span class="pill {{ pill_class }}"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#{{ icon }}"/></svg><span class="pill-word">{{ word }}</span></span>
+<span class="pill {{ pill_class }}"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#{{ icon }}"/></svg><span class="pill-word">{{ word }}</span></span>
 {%- endmacro %}
 {% macro tick(routine_id, date, title) -%}
 <form class="tick-form" method="post" action="/occurrences/{{ routine_id }}/tick?date={{ date }}" hx-post="/occurrences/{{ routine_id }}/tick?date={{ date }}" hx-target="#routines" hx-swap="outerHTML">
-<button type="submit" class="tick-btn" aria-label="Mark {{ title }} done"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#check"/></svg></button>
+<button type="submit" class="tick-btn" aria-label="Mark {{ title }} done"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#check"/></svg></button>
 </form>
 {%- endmacro %}
 {% macro untick(routine_id, date, title) -%}
-<button type="button" class="tick-btn is-done" aria-label="Mark {{ title }} not done" hx-delete="/occurrences/{{ routine_id }}/tick?date={{ date }}" hx-target="#routines" hx-swap="outerHTML"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#check"/></svg></button>
+<button type="button" class="tick-btn is-done" aria-label="Mark {{ title }} not done" hx-delete="/occurrences/{{ routine_id }}/tick?date={{ date }}" hx-target="#routines" hx-swap="outerHTML"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#check"/></svg></button>
 {%- endmacro %}
 {% macro pin_view(pin) -%}
 {% if let Some(p) = pin %}
@@ -30,7 +30,7 @@
 {% when Some with (url) %}
 <img class="thumb" src="{{ url }}" alt="">
 {% when None %}
-<svg class="icon" aria-hidden="true"><use href="/static/icons.svg#paperclip"/></svg>
+<svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#paperclip"/></svg>
 {% endmatch %}
 <span class="pin-summary">{{ p.summary }}</span>
 {% if !p.links.is_empty() %}
@@ -46,16 +46,16 @@
 {% macro week_pin(has_pin, occurrence_id, prefix) -%}
 {% if has_pin %}
 {% if let Some(oid) = occurrence_id %}
-<details class="proof" hx-get="/occurrences/{{ oid }}/pin" hx-trigger="toggle once" hx-target="#{{ prefix }}pin-occ-{{ oid }}" hx-swap="outerHTML"><summary><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#paperclip"/></svg>Proof</summary><div id="{{ prefix }}pin-occ-{{ oid }}"></div></details>
+<details class="proof" hx-get="/occurrences/{{ oid }}/pin" hx-trigger="toggle once" hx-target="#{{ prefix }}pin-occ-{{ oid }}" hx-swap="outerHTML"><summary><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#paperclip"/></svg>Proof</summary><div id="{{ prefix }}pin-occ-{{ oid }}"></div></details>
 {% endif %}
 {% endif %}
 {%- endmacro %}
-{% macro proof(routine_id, occurrence_id, date) -%}
+{% macro proof(routine_id, occurrence_id, date, pin) -%}
 {% if let Some(oid) = occurrence_id %}
 <details class="proof">
-<summary><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#image"/></svg>Add proof</summary>
+<summary><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#image"/></svg>{% if let Some(p) = pin %}Edit proof{% else %}Add proof{% endif %}</summary>
 <form class="proof-body" method="post" action="/occurrences/{{ oid }}/pin?date={{ date }}" enctype="multipart/form-data" hx-post="/occurrences/{{ oid }}/pin?date={{ date }}" hx-target="#routines" hx-swap="outerHTML">
-<input name="summary" required placeholder="What did you do?" aria-label="Proof summary">
+<input name="summary" required placeholder="What did you do?" aria-label="Proof summary"{% if let Some(p) = pin %} value="{{ p.summary }}"{% endif %}>
 <input name="link_url" type="url" placeholder="https://link (optional)" aria-label="Proof link">
 <input type="file" name="photos" multiple accept=".png,.jpeg,.webp" aria-label="Proof photos">
 <button type="submit" class="btn btn-primary btn-sm">Save proof</button>
@@ -71,8 +71,8 @@
 <p class="sched">{{ pct }} last 30 days</p>
 {% endif %}
 <div class="routine-meta">
-<a class="btn btn-sm" href="/routines/{{ item.id }}/edit"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#pencil"/></svg>Edit</a>
-<form method="post" action="/routines/{{ item.id }}/archive"><button type="submit" class="btn btn-sm"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#archive"/></svg>Archive</button></form>
+<a class="btn btn-sm" href="/routines/{{ item.id }}/edit"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#pencil"/></svg>Edit</a>
+<form method="post" action="/routines/{{ item.id }}/archive"><button type="submit" class="btn btn-sm"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#archive"/></svg>Archive</button></form>
 </div>
 </article>
 {%- endmacro %}

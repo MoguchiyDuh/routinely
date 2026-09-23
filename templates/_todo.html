@@ -14,9 +14,9 @@
 <h2>Todos</h2>
 <form class="row-form" method="post" action="/todos?date={{ date }}" hx-post="/todos?date={{ date }}" hx-target="#todo-region" hx-swap="outerHTML">
 <input name="title" maxlength="200" required placeholder="Add a todo" aria-label="New todo title">
-<button type="submit" class="btn btn-primary"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#plus"/></svg>Add</button>
+<button type="submit" class="btn btn-primary"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#plus"/></svg>Add</button>
 <details class="todo-more">
-<summary><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#chevron-down"/></svg>Notes and deadline</summary>
+<summary><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#chevron-down"/></svg>Notes and deadline</summary>
 <div class="todo-more-body">
 <div class="field"><label for="todo-notes">Notes</label><textarea id="todo-notes" name="notes" rows="2"></textarea></div>
 <div class="field"><label for="todo-deadline">Deadline</label><input id="todo-deadline" type="datetime-local" name="deadline"></div>
@@ -25,7 +25,7 @@
 </form>
 {% if todos.is_empty() %}
 <div class="empty">
-<svg class="icon" aria-hidden="true"><use href="/static/icons.svg#list-todo"/></svg>
+<svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#list-todo"/></svg>
 <p>No open todos.</p>
 </div>
 {% else %}

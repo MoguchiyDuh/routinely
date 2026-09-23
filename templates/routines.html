@@ -3,17 +3,18 @@
 {% block title %}Routines{% endblock %}
 {% block pagetitle %}Routines{% endblock %}
 {% block content %}
+<div class="page">
 <h1>Routines</h1>
 {% if active.is_empty() && finished.is_empty() && archived.is_empty() %}
 <div class="card">
 <div class="empty">
-<svg class="icon" aria-hidden="true"><use href="/static/icons.svg#repeat"/></svg>
+<svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#repeat"/></svg>
 <p>No routines yet</p>
-<a class="btn btn-primary" href="/routines/new"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#plus"/></svg>New routine</a>
+<a class="btn btn-primary" href="/routines/new"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#plus"/></svg>New routine</a>
 </div>
 </div>
 {% else %}
-<p class="preset-row"><a class="btn btn-primary" href="/routines/new"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#plus"/></svg>New routine</a></p>
+<p class="preset-row"><a class="btn btn-primary" href="/routines/new"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#plus"/></svg>New routine</a></p>
 <section aria-labelledby="active-routines-title">
 <h2 class="section-title" id="active-routines-title">Active</h2>
 {% if active.is_empty() %}
@@ -38,7 +39,7 @@
 {% endif %}
 {% if !archived.is_empty() %}
 <details class="archived">
-<summary><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#chevron-down"/></svg>Archived</summary>
+<summary><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#chevron-down"/></svg>Archived</summary>
 <div class="routine-list">
 {% for item in archived %}
 {{ ui::routine_card(item) }}
@@ -47,4 +48,5 @@
 </details>
 {% endif %}
 {% endif %}
+</div>
 {% endblock %}

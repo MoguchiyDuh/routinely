@@ -11,6 +11,6 @@
 </div>
 {{ ui::pin_view(b.pin) }}
 {% if b.status == "completed" %}
-{{ ui::proof(b.id, b.occurrence_id, date) }}
+{{ ui::proof(b.id, b.occurrence_id, date, b.pin) }}
 {% endif %}
 </div>

@@ -3,12 +3,13 @@
 {% block title %}Group{% endblock %}
 {% block pagetitle %}Group{% endblock %}
 {% block content %}
+<div class="page">
 <header class="day-header">
 <h1>Group</h1>
 </header>
 {% if rows.is_empty() %}
 <div class="card empty">
-<svg class="icon" aria-hidden="true"><use href="/static/icons.svg#users"/></svg>
+<svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#users"/></svg>
 <p>No members yet. Share the signup code to invite friends.</p>
 <a class="btn btn-primary" href="/settings">Open settings</a>
 </div>
@@ -27,12 +28,12 @@
 <span class="rank-meta">
 {% match row.streak_days %}
 {% when Some with (days) %}
-<span class="streak"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#flame"/></svg><span>{{ days }} day streak</span></span>
+<span class="streak"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#flame"/></svg><span>{{ days }} day streak</span></span>
 {% when None %}
 <span>&mdash;</span>
 {% endmatch %}
 {% if row.pending > 0 %}
-<span class="rank-pending"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#gavel"/></svg><span>{{ row.pending }}</span></span>
+<span class="rank-pending"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#gavel"/></svg><span>{{ row.pending }}</span></span>
 {% endif %}
 </span>
 </span>
@@ -40,4 +41,5 @@
 {% endfor %}
 </div>
 {% endif %}
+</div>
 {% endblock %}

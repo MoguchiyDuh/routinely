@@ -5,31 +5,31 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}{% endblock %} · routinely</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/static/app.css">
-<script src="/static/htmx.min.js" defer></script>
-<script src="/static/app.js" defer></script>
+<link rel="stylesheet" href="/static/app.css?v={{ crate::ASSET_VERSION }}">
+<script src="/static/htmx.min.js?v={{ crate::ASSET_VERSION }}" defer></script>
+<script src="/static/app.js?v={{ crate::ASSET_VERSION }}" defer></script>
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
 <div class="app">
 <aside class="sidebar">
-<a class="brand" href="/day"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#repeat"/></svg>routinely</a>
+<a class="brand" href="/day"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#repeat"/></svg>routinely</a>
 <nav class="nav" aria-label="Main">
-<a class="nav-item" href="/day"{% if shell.active == "today" %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#sun"/></svg><span class="nav-label">Today</span></a>
-<a class="nav-item" href="/week"{% if shell.active == "week" %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#calendar-days"/></svg><span class="nav-label">Week</span></a>
-<a class="nav-item" href="/routines"{% if shell.active == "routines" %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#repeat"/></svg><span class="nav-label">Routines</span></a>
-<a class="nav-item" href="/leaderboard"{% if shell.active == "group" %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#users"/></svg><span class="nav-label">Group</span></a>
-<a class="nav-item" href="/punishments"{% if shell.active == "penalties" %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#gavel"/></svg><span class="nav-label">Penalties</span>{% if shell.pending_count > 0 %}<span class="nav-badge">{{ shell.pending_count }}</span>{% endif %}</a>
+<a class="nav-item" href="/day"{% if shell.active == "today" %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#sun"/></svg><span class="nav-label">Today</span></a>
+<a class="nav-item" href="/week"{% if shell.active == "week" %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#calendar-days"/></svg><span class="nav-label">Week</span></a>
+<a class="nav-item" href="/routines"{% if shell.active == "routines" %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#repeat"/></svg><span class="nav-label">Routines</span></a>
+<a class="nav-item" href="/leaderboard"{% if shell.active == "group" %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#users"/></svg><span class="nav-label">Group</span></a>
+<a class="nav-item" href="/punishments"{% if shell.active == "penalties" %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#gavel"/></svg><span class="nav-label">Penalties</span>{% if shell.pending_count > 0 %}<span class="nav-badge">{{ shell.pending_count }}</span>{% endif %}</a>
 </nav>
 <details class="menu">
-<summary class="menu-button">{{ ui::avatar(&shell.avatar, "md") }}<span class="menu-name">{{ shell.username }}</span><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#chevron-down"/></svg></summary>
+<summary class="menu-button">{{ ui::avatar(&shell.avatar, "md") }}<span class="menu-name">{{ shell.username }}</span><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#chevron-down"/></svg></summary>
 {{ ui::menu_panel(shell.user_id) }}
 </details>
 </aside>
 <header class="topbar">
 <p class="topbar-title">{% block pagetitle %}{% endblock %}</p>
 <details class="menu">
-<summary class="menu-button">{{ ui::avatar(&shell.avatar, "sm") }}<svg class="icon" aria-hidden="true"><use href="/static/icons.svg#chevron-down"/></svg></summary>
+<summary class="menu-button">{{ ui::avatar(&shell.avatar, "sm") }}<svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#chevron-down"/></svg></summary>
 {{ ui::menu_panel(shell.user_id) }}
 </details>
 </header>
@@ -37,16 +37,16 @@
 {% block content %}{% endblock %}
 </main>
 <nav class="tabbar" aria-label="Main">
-<a class="nav-item" href="/day"{% if shell.active == "today" %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#sun"/></svg><span class="nav-label">Today</span></a>
-<a class="nav-item" href="/week"{% if shell.active == "week" %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#calendar-days"/></svg><span class="nav-label">Week</span></a>
-<a class="nav-item" href="/routines"{% if shell.active == "routines" %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#repeat"/></svg><span class="nav-label">Routines</span></a>
-<a class="nav-item" href="/leaderboard"{% if shell.active == "group" %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#users"/></svg><span class="nav-label">Group</span></a>
-<a class="nav-item" href="/punishments"{% if shell.active == "penalties" %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#gavel"/></svg><span class="nav-label">Penalties</span>{% if shell.pending_count > 0 %}<span class="nav-badge">{{ shell.pending_count }}</span>{% endif %}</a>
+<a class="nav-item" href="/day"{% if shell.active == "today" %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#sun"/></svg><span class="nav-label">Today</span></a>
+<a class="nav-item" href="/week"{% if shell.active == "week" %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#calendar-days"/></svg><span class="nav-label">Week</span></a>
+<a class="nav-item" href="/routines"{% if shell.active == "routines" %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#repeat"/></svg><span class="nav-label">Routines</span></a>
+<a class="nav-item" href="/leaderboard"{% if shell.active == "group" %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#users"/></svg><span class="nav-label">Group</span></a>
+<a class="nav-item" href="/punishments"{% if shell.active == "penalties" %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#gavel"/></svg><span class="nav-label">Penalties</span>{% if shell.pending_count > 0 %}<span class="nav-badge">{{ shell.pending_count }}</span>{% endif %}</a>
 </nav>
 {% match shell.flash %}
 {% when Some with (message) %}
 <div class="toast-region" aria-live="polite">
-<div class="toast" role="status"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#circle-check"/></svg><span>{{ message }}</span><button type="button" class="toast-close" data-toast-close><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#x"/></svg><span class="visually-hidden">Close</span></button></div>
+<div class="toast" role="status"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#circle-check"/></svg><span>{{ message }}</span><button type="button" class="toast-close" data-toast-close><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#x"/></svg><span class="visually-hidden">Close</span></button></div>
 </div>
 {% when None %}
 {% endmatch %}

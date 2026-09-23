@@ -1,5 +1,7 @@
 pub mod app;
 pub mod auth;
+
+pub const ASSET_VERSION: &str = env!("ASSET_VERSION");
 pub mod avatar;
 pub mod config;
 pub mod cookie;

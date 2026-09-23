@@ -2,7 +2,7 @@
 {% block title %}Log in{% endblock %}
 {% block content %}
 <div class="auth-card">
-<div class="brand-mark"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#repeat"/></svg></div>
+<div class="brand-mark"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#repeat"/></svg></div>
 <h1>Log in</h1>
 <p class="tagline">Routines, proof, and friendly accountability.</p>
 {% match error %}
@@ -20,7 +20,7 @@
 <input id="login-password" type="password" name="password" autocomplete="current-password" required>
 </div>
 <input type="hidden" name="timezone">
-<button type="submit">Log in</button>
+<button type="submit" class="btn btn-primary">Log in</button>
 </form>
 <p class="auth-alt">No account? <a href="/signup">Create one</a></p>
 </div>

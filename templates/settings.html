@@ -3,6 +3,7 @@
 {% block title %}Settings{% endblock %}
 {% block pagetitle %}Settings{% endblock %}
 {% block content %}
+<div class="page">
 <header class="day-header">
 <h1>Settings</h1>
 </header>
@@ -34,7 +35,7 @@
 {% for icon in icons %}
 <label class="avatar-option">
 <input type="radio" name="icon" value="{{ icon.name }}" aria-label="{{ icon.name }}"{% if icon.selected %} checked{% endif %}>
-<svg class="icon" aria-hidden="true"><use href="/static/icons.svg#{{ icon.name }}"/></svg>
+<svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#{{ icon.name }}"/></svg>
 </label>
 {% endfor %}
 </div>
@@ -86,4 +87,5 @@
 <button type="submit" class="btn btn-primary">Change password</button>
 </form>
 </section>
+</div>
 {% endblock %}

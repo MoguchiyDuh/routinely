@@ -7,13 +7,13 @@
 <div class="day-heading">
 <h1>{{ weekday }}, <span class="tnum">{{ date_label }}</span></h1>
 <nav class="date-strip" aria-label="Date navigation">
-<a class="btn btn-icon btn-secondary" href="/day?date={{ prev_date }}" aria-label="Previous day"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#chevron-left"/></svg></a>
+<a class="btn btn-icon btn-secondary" href="/day?date={{ prev_date }}" aria-label="Previous day"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#chevron-left"/></svg></a>
 {% if is_today %}
 <span class="current">Today</span>
 {% else %}
 <a class="btn btn-secondary" href="/day">Today</a>
 {% endif %}
-<a class="btn btn-icon btn-secondary" href="/day?date={{ next_date }}" aria-label="Next day"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#chevron-right"/></svg></a>
+<a class="btn btn-icon btn-secondary" href="/day?date={{ next_date }}" aria-label="Next day"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#chevron-right"/></svg></a>
 <form method="get" action="/day" class="date-form">
 <input type="date" name="date" value="{{ date }}" aria-label="Jump to date">
 <button type="submit" class="btn btn-secondary">Go</button>
@@ -32,7 +32,7 @@
 <ul class="onboarding-steps">
 {% for s in o.steps %}
 <li class="onboarding-step{% if s.done %} done{% endif %}">
-<svg class="icon" aria-hidden="true"><use href="/static/icons.svg#{{ s.icon }}"/></svg>
+<svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#{{ s.icon }}"/></svg>
 <span class="step-label">{{ s.label }}</span>
 {% if !s.done %}
 {% if let Some(href) = s.href %}

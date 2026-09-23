@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}{% endblock %} · routinely</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/static/app.css">
-<script src="/static/htmx.min.js" defer></script>
-<script src="/static/app.js" defer></script>
+<link rel="stylesheet" href="/static/app.css?v={{ crate::ASSET_VERSION }}">
+<script src="/static/htmx.min.js?v={{ crate::ASSET_VERSION }}" defer></script>
+<script src="/static/app.js?v={{ crate::ASSET_VERSION }}" defer></script>
 </head>
 <body>
 <main class="auth">

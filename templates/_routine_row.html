@@ -16,7 +16,7 @@
 {% endif %}
 {{ ui::pin_view(r.pin) }}
 {% if r.status == "completed" %}
-{{ ui::proof(r.id, r.occurrence_id, date) }}
+{{ ui::proof(r.id, r.occurrence_id, date, r.pin) }}
 {% endif %}
 </div>
 {{ ui::status_pill(r.pill_class, r.status_word, r.pill_icon) }}

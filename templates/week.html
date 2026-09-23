@@ -7,14 +7,14 @@
 <header class="day-header">
 <h1>Week, <span class="tnum">{{ week_start }} &ndash; {{ week_end }}</span></h1>
 <nav class="date-strip" aria-label="Week navigation">
-<a class="btn btn-icon btn-secondary" href="{{ prev_href }}" aria-label="Previous week"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#chevron-left"/></svg></a>
+<a class="btn btn-icon btn-secondary" href="{{ prev_href }}" aria-label="Previous week"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#chevron-left"/></svg></a>
 <a class="btn btn-secondary" href="{{ this_week_href }}">This week</a>
-<a class="btn btn-icon btn-secondary" href="{{ next_href }}" aria-label="Next week"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#chevron-right"/></svg></a>
+<a class="btn btn-icon btn-secondary" href="{{ next_href }}" aria-label="Next week"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#chevron-right"/></svg></a>
 </nav>
 </header>
 <nav class="week-filter chips" aria-label="Filter week by person">
 {% for c in chips %}
-<a class="chip{% if c.active %} is-active{% endif %}" href="{{ c.href }}"{% if c.active %} aria-current="page"{% endif %}>{% if let Some(a) = c.avatar %}{{ ui::avatar(&a, "sm") }}{% else %}<svg class="icon" aria-hidden="true"><use href="/static/icons.svg#users"/></svg>{% endif %}<span>{{ c.label }}</span></a>
+<a class="chip{% if c.active %} is-active{% endif %}" href="{{ c.href }}"{% if c.active %} aria-current="page"{% endif %}>{% if let Some(a) = c.avatar %}{{ ui::avatar(&a, "sm") }}{% else %}<svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#users"/></svg>{% endif %}<span>{{ c.label }}</span></a>
 {% endfor %}
 </nav>
 {% if has_entries %}
@@ -44,7 +44,7 @@
 {% include "_week_block.html" %}
 {% endfor %}
 {% for m in day.markers %}
-<span class="tl-marker{% if m.done %} is-done{% endif %}{% if m.overdue %} is-overdue{% endif %}" style="--start: {{ m.start_min }}"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#clock"/></svg><span class="tnum">{{ m.time_label }}</span> {{ m.title }}{% if let Some(o) = m.owner %} <span class="user-dot" data-color="{{ o.color }}" title="{{ o.username }}"></span> <span class="owner-name">{{ o.username }}</span>{% endif %}</span>
+<span class="tl-marker{% if m.done %} is-done{% endif %}{% if m.overdue %} is-overdue{% endif %}" style="--start: {{ m.start_min }}"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#clock"/></svg><span class="tnum">{{ m.time_label }}</span> {{ m.title }}{% if let Some(o) = m.owner %} <span class="user-dot" data-color="{{ o.color }}" title="{{ o.username }}"></span> <span class="owner-name">{{ o.username }}</span>{% endif %}</span>
 {% endfor %}
 {% if day.is_today %}
 <div class="now-line"><span class="now-time"></span></div>
@@ -68,7 +68,7 @@
 </div>
 {% else %}
 <div class="empty">
-<svg class="icon" aria-hidden="true"><use href="/static/icons.svg#calendar-days"/></svg>
+<svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#calendar-days"/></svg>
 <p>Nothing scheduled this week.</p>
 <a class="btn btn-primary" href="/routines/new">Create a routine</a>
 </div>

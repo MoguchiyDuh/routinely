@@ -1,5 +1,10 @@
 use axum::Router;
 use axum::extract::DefaultBodyLimit;
+use axum::extract::Request;
+use axum::http::HeaderValue;
+use axum::http::header::CACHE_CONTROL;
+use axum::middleware::{self, Next};
+use axum::response::Response;
 use axum::routing::get;
 use sqlx::SqlitePool;
 use tower_http::services::ServeDir;
@@ -21,12 +26,23 @@ pub async fn healthz() -> &'static str {
     return "ok";
 }
 
+async fn no_cache(request: Request, next: Next) -> Response {
+    let mut response = next.run(request).await;
+    response
+        .headers_mut()
+        .insert(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    return response;
+}
+
 pub fn build_router(state: AppState) -> Router {
+    let static_files = Router::new()
+        .fallback_service(ServeDir::new("static"))
+        .layer(middleware::from_fn(no_cache));
     return Router::new()
         .route("/healthz", get(healthz))
         .merge(routes::router())
         .merge(web::router())
-        .nest_service("/static", ServeDir::new("static"))
+        .nest_service("/static", static_files)
         .nest_service("/uploads", ServeDir::new(UPLOADS_DIR))
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         .with_state(state);

@@ -2,9 +2,11 @@
 {% block title %}Edit routine{% endblock %}
 {% block pagetitle %}Edit routine{% endblock %}
 {% block content %}
+<div class="page page-narrow">
 <h1>Edit routine</h1>
 <p class="hint">Schedule changes apply from today; past days keep the old schedule.</p>
-<div class="card narrow">
+<div class="card">
 {% include "_routine_form.html" %}
+</div>
 </div>
 {% endblock %}
