@@ -1,44 +1,23 @@
-<div id="routine-{{ r.id }}" class="routine-card status-{{ r.status }}">
-<h3>{{ r.title }}</h3>
-{% if let Some(label) = r.time_label %}
-<p class="time-label">{{ label }}</p>
+{% import "_macros.html" as ui %}
+<article class="routine-row status-{{ r.status }}">
+{% if r.status == "completed" %}
+{{ ui::untick(r.id, date, r.title) }}
+{% else %}
+{{ ui::tick(r.id, date, r.title) }}
 {% endif %}
-<p class="status">{{ r.status }}</p>
+<div class="routine-info">
+<p class="routine-title">{{ r.title }}</p>
 {% if let Some(done) = r.period_done %}
 {% if let Some(required) = r.period_required %}
-<p class="progress">{{ done }}/{{ required }}</p>
+{% if let Some(name) = r.period_name %}
+<p class="routine-sub tnum">{{ done }}/{{ required }} this {{ name }}</p>
 {% endif %}
 {% endif %}
-{% if let Some(note) = r.evidence_note %}
-<p class="evidence">{{ note }}</p>
 {% endif %}
-{% if let Some(pin) = r.pin %}
-<div class="pin">
-<p>{{ pin.summary }}</p>
-<ul>
-{% for link in pin.links %}
-<li><a href="{{ link }}">{{ link }}</a></li>
-{% endfor %}
-</ul>
-{% for photo in pin.photos %}
-<img src="/uploads/{{ photo }}" alt="photo">
-{% endfor %}
-</div>
-{% endif %}
+{{ ui::pin_view(r.pin) }}
 {% if r.status == "completed" %}
-{% if let Some(oid) = r.occurrence_id %}
-<button hx-delete="/occurrences/{{ r.id }}/tick?date={{ date }}" hx-target="#routines" hx-swap="outerHTML">untick</button>
-<form method="post" action="/occurrences/{{ oid }}/pin?date={{ date }}" enctype="multipart/form-data" hx-post="/occurrences/{{ oid }}/pin?date={{ date }}" hx-target="#routines" hx-swap="outerHTML">
-<input name="summary" placeholder="summary" required>
-<input name="link_url" placeholder="https://example.com">
-<input type="file" name="photos" multiple accept=".png,.jpeg,.webp">
-<button type="submit">pin evidence</button>
-</form>
-{% endif %}
-{% else %}
-<form method="post" action="/occurrences/{{ r.id }}/tick?date={{ date }}" hx-post="/occurrences/{{ r.id }}/tick?date={{ date }}" hx-target="#routines" hx-swap="outerHTML">
-<input name="evidence_note" placeholder="evidence note">
-<button type="submit">tick</button>
-</form>
+{{ ui::proof(r.id, r.occurrence_id, date) }}
 {% endif %}
 </div>
+{{ ui::status_pill(r.pill_class, r.status_word, r.pill_icon) }}
+</article>

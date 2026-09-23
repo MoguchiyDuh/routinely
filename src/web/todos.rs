@@ -23,8 +23,7 @@ use crate::store;
 use super::WebError;
 use super::WebResult;
 use super::day::DayQuery;
-use super::day::TodosSection;
-use super::day::build_todos;
+use super::day::build_todos_section;
 use super::html;
 use super::is_htmx;
 use super::parse_date_param;
@@ -72,7 +71,7 @@ async fn create_ssr(
         deadline.as_deref(),
     )
     .await?;
-    return finish_ssr(&state, &auth, day, &headers).await;
+    return finish_ssr(&state, &auth, day, today, &headers).await;
 }
 
 async fn delete_ssr(
@@ -88,7 +87,7 @@ async fn delete_ssr(
     if !deleted {
         return Err(WebError::NotFound);
     }
-    return finish_ssr(&state, &auth, day, &headers).await;
+    return finish_ssr(&state, &auth, day, today, &headers).await;
 }
 
 async fn toggle_ssr(
@@ -104,7 +103,7 @@ async fn toggle_ssr(
     if !toggled {
         return Err(WebError::NotFound);
     }
-    return finish_ssr(&state, &auth, day, &headers).await;
+    return finish_ssr(&state, &auth, day, today, &headers).await;
 }
 
 async fn api_create(
@@ -165,11 +164,12 @@ async fn finish_ssr(
     state: &AppState,
     auth: &crate::auth::session::SessionUser,
     day: NaiveDate,
+    today: NaiveDate,
     headers: &HeaderMap,
 ) -> WebResult {
     if is_htmx(headers) {
-        let todos = build_todos(&state.pool, auth.id).await?;
-        return Ok(html(&TodosSection { date: day, todos })?);
+        let section = build_todos_section(&state.pool, auth.id, &auth.timezone, day, today).await?;
+        return Ok(html(&section)?);
     }
     return Ok(Redirect::to(&format!("/day?date={day}")).into_response());
 }

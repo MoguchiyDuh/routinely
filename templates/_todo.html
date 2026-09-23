@@ -1,24 +1,41 @@
-<section id="todos" class="card">
-<h2>todos</h2>
-<form method="post" action="/todos?date={{ date }}" hx-post="/todos?date={{ date }}" hx-target="#todos" hx-swap="outerHTML" class="catalog-form">
-<input name="title" placeholder="title" maxlength="200" required>
-<input name="notes" placeholder="notes">
-<input type="datetime-local" name="deadline">
-<button type="submit">add todo</button>
-</form>
+<div id="todo-region" class="todo-region">
+{% if is_today && !overdue.is_empty() %}
+<section class="card overdue" aria-label="Overdue todos">
+<h2 class="section-title">Overdue</h2>
 <ul class="todo-list">
-{% for t in todos %}
-<li id="todo-{{ t.id }}" class="todo{% if t.overdue %} overdue{% endif %}{% if t.done %} done{% endif %}">
-<span>{{ t.title }}</span>
-{% if let Some(notes) = t.notes %}
-<p>{{ notes }}</p>
-{% endif %}
-{% if let Some(deadline) = t.deadline %}
-<p>{{ deadline }}</p>
-{% endif %}
-<button class="ghost" hx-post="/todos/{{ t.id }}/toggle?date={{ date }}" hx-target="#todos" hx-swap="outerHTML">{% if t.done %}undone{% else %}done{% endif %}</button>
-<button class="ghost" hx-delete="/todos/{{ t.id }}?date={{ date }}" hx-target="#todos" hx-swap="outerHTML">delete</button>
-</li>
+{% for t in overdue %}
+{% include "_todo_item.html" %}
 {% endfor %}
 </ul>
 </section>
+{% endif %}
+<aside class="side-panel">
+<section class="card" aria-label="Todos">
+<h2>Todos</h2>
+<form class="row-form" method="post" action="/todos?date={{ date }}" hx-post="/todos?date={{ date }}" hx-target="#todo-region" hx-swap="outerHTML">
+<input name="title" maxlength="200" required placeholder="Add a todo" aria-label="New todo title">
+<button type="submit" class="btn btn-primary"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#plus"/></svg>Add</button>
+<details class="todo-more">
+<summary><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#chevron-down"/></svg>Notes and deadline</summary>
+<div class="todo-more-body">
+<div class="field"><label for="todo-notes">Notes</label><textarea id="todo-notes" name="notes" rows="2"></textarea></div>
+<div class="field"><label for="todo-deadline">Deadline</label><input id="todo-deadline" type="datetime-local" name="deadline"></div>
+</div>
+</details>
+</form>
+{% if todos.is_empty() %}
+<div class="empty">
+<svg class="icon" aria-hidden="true"><use href="/static/icons.svg#list-todo"/></svg>
+<p>No open todos.</p>
+</div>
+{% else %}
+<ul class="todo-list">
+{% for t in todos %}
+{% include "_todo_item.html" %}
+{% endfor %}
+</ul>
+{% endif %}
+</section>
+{% include "_note.html" %}
+</aside>
+</div>

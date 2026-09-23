@@ -50,7 +50,11 @@ async fn save_ssr(
     store::upsert_note(&state.pool, auth.id, day, &body).await?;
     if is_htmx(&headers) {
         let body = store::get_note(&state.pool, auth.id, day).await?;
-        return Ok(html(&NoteSection { date: day, body })?);
+        return Ok(html(&NoteSection {
+            date: day,
+            body,
+            saved: true,
+        })?);
     }
     return Ok(Redirect::to(&format!("/day?date={day}")).into_response());
 }

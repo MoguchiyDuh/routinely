@@ -321,6 +321,15 @@ pub struct TodoRow {
 }
 
 #[derive(Debug, Clone)]
+pub struct OnboardingFlags {
+    pub has_routine: bool,
+    pub has_completion: bool,
+    pub has_pin: bool,
+    pub avatar_set: bool,
+    pub dismissed: bool,
+}
+
+#[derive(Debug, Clone)]
 pub struct PinInfo {
     pub summary: String,
     pub links: Vec<String>,
@@ -847,6 +856,67 @@ pub async fn list_todos(
             completed_at,
         })
         .collect());
+}
+
+pub async fn has_any_routine(pool: &SqlitePool, user_id: i64) -> Result<bool, sqlx::Error> {
+    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM routines WHERE user_id = ?")
+        .bind(user_id)
+        .fetch_one(pool)
+        .await?;
+    return Ok(count > 0);
+}
+
+pub async fn onboarding_flags(
+    pool: &SqlitePool,
+    user_id: i64,
+) -> Result<OnboardingFlags, sqlx::Error> {
+    let (routine_count,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM routines WHERE user_id = ?")
+            .bind(user_id)
+            .fetch_one(pool)
+            .await?;
+    let (completion_count,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM completions c \
+         JOIN occurrences o ON o.id = c.occurrence_id \
+         JOIN routines r ON r.id = o.routine_id \
+         WHERE r.user_id = ?",
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+    let (pin_count,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM pins p \
+         JOIN completions c ON c.id = p.completion_id \
+         JOIN occurrences o ON o.id = c.occurrence_id \
+         JOIN routines r ON r.id = o.routine_id \
+         WHERE r.user_id = ?",
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+    let row: Option<(Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT avatar_path, avatar_icon, onboarding_dismissed_at FROM users WHERE id = ?",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+    let (avatar_path, avatar_icon, dismissed_at) = row.unwrap_or_default();
+    return Ok(OnboardingFlags {
+        has_routine: routine_count > 0,
+        has_completion: completion_count > 0,
+        has_pin: pin_count > 0,
+        avatar_set: avatar_path.is_some() || avatar_icon.is_some(),
+        dismissed: dismissed_at.is_some(),
+    });
+}
+
+pub async fn dismiss_onboarding(pool: &SqlitePool, user_id: i64) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE users SET onboarding_dismissed_at = ? WHERE id = ?")
+        .bind(Utc::now().to_rfc3339())
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    return Ok(());
 }
 
 pub async fn toggle_todo(

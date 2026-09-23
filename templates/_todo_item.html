@@ -1,0 +1,15 @@
+<li class="todo{% if t.done %} done{% endif %}{% if t.overdue %} overdue{% endif %}">
+<form class="todo-toggle" method="post" action="/todos/{{ t.id }}/toggle?date={{ date }}" hx-post="/todos/{{ t.id }}/toggle?date={{ date }}" hx-target="#todo-region" hx-swap="outerHTML">
+<button type="submit" class="tick-btn{% if t.done %} is-done{% endif %}" aria-label="{% if t.done %}Mark todo not done{% else %}Mark todo done{% endif %}"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#check"/></svg></button>
+</form>
+<div class="todo-body">
+<span class="todo-title">{{ t.title }}</span>
+{% if let Some(notes) = t.notes %}
+<p>{{ notes }}</p>
+{% endif %}
+{% if let Some(deadline) = t.deadline %}
+<p class="tnum">{{ deadline }}</p>
+{% endif %}
+</div>
+<button type="button" class="btn btn-ghost btn-sm todo-delete" aria-label="Delete todo" hx-delete="/todos/{{ t.id }}?date={{ date }}" hx-target="#todo-region" hx-swap="outerHTML"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#x"/></svg><span class="visually-hidden">Delete</span></button>
+</li>

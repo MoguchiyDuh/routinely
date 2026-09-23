@@ -5,15 +5,14 @@
     var el = document.querySelector('input[type="hidden"][name="timezone"]');
     if (el) el.value = tz;
   } catch (e) {}
-  var regions = document.querySelectorAll("[data-now-line]");
   var setNow = function () {
     var d = new Date();
     var v = d.getHours() * 60 + d.getMinutes();
-    regions.forEach(function (t) {
+    document.querySelectorAll("[data-now-line]").forEach(function (t) {
       t.style.setProperty("--now", v);
     });
   };
-  if (regions.length) {
+  if (document.querySelector("[data-now-line]")) {
     setNow();
     setInterval(setNow, 60000);
   }

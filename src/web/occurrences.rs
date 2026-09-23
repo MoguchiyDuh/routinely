@@ -25,8 +25,7 @@ use crate::store;
 use super::WebError;
 use super::WebResult;
 use super::day::DayQuery;
-use super::day::RoutinesSection;
-use super::day::build_rows;
+use super::day::build_routines_section;
 use super::hex_encode;
 use super::html;
 use super::is_htmx;
@@ -141,8 +140,9 @@ async fn pin_ssr(
         store::add_photo_attachment(&state.pool, pin_id, &file_name).await?;
     }
     if is_htmx(&headers) {
-        let rows = build_rows(&state.pool, auth.id, day, today).await?;
-        return Ok(html(&RoutinesSection { date: day, rows })?);
+        let section =
+            build_routines_section(&state.pool, auth.id, &auth.timezone, day, today).await?;
+        return Ok(html(&section)?);
     }
     return Ok(Redirect::to(&format!("/day?date={day}")).into_response());
 }
@@ -215,8 +215,9 @@ async fn finish_ssr(
     headers: &HeaderMap,
 ) -> WebResult {
     if is_htmx(headers) {
-        let rows = build_rows(&state.pool, auth.id, day, today).await?;
-        return Ok(html(&RoutinesSection { date: day, rows })?);
+        let section =
+            build_routines_section(&state.pool, auth.id, &auth.timezone, day, today).await?;
+        return Ok(html(&section)?);
     }
     return Ok(Redirect::to(&format!("/day?date={day}")).into_response());
 }

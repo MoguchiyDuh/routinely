@@ -1,7 +1,12 @@
-<section id="note" class="card">
-<h2>note</h2>
-<form method="post" action="/notes/{{ date }}" hx-post="/notes/{{ date }}" hx-target="#note" hx-swap="outerHTML">
-<textarea name="body" rows="6">{% if let Some(text) = body %}{{ text }}{% endif %}</textarea>
-<button type="submit">save note</button>
+<form id="note" class="card note-card" method="post" action="/notes/{{ date }}" aria-label="Daily note">
+<div class="card-header">
+<h2>Note</h2>
+{% if saved %}
+<span class="save-state" role="status">Saved</span>
+{% endif %}
+</div>
+<textarea name="body" class="note-textarea" aria-label="Daily note" hx-post="/notes/{{ date }}" hx-trigger="input changed delay:800ms, blur" hx-target="#note" hx-swap="outerHTML" hx-preserve="true">{% if let Some(text) = body %}{{ text }}{% endif %}</textarea>
+<div class="note-actions">
+<button type="submit" class="btn btn-secondary btn-sm" hx-post="/notes/{{ date }}" hx-target="#note" hx-swap="outerHTML">Save note</button>
+</div>
 </form>
-</section>

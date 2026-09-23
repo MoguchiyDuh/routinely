@@ -1,0 +1,16 @@
+{% import "_macros.html" as ui %}
+<div class="tl-block status-{{ b.status }}" style="--start: {{ b.start_min }}; --len: {{ b.len_min }}; --col: {{ b.col }}; --cols: {{ b.cols }}" aria-label="{{ b.title }}, {{ b.time_label }}, {{ b.status_word }}">
+<div class="tl-head">
+{% if b.status == "completed" %}
+{{ ui::untick(b.id, date, b.title) }}
+{% else %}
+{{ ui::tick(b.id, date, b.title) }}
+{% endif %}
+<strong class="tl-title">{{ b.title }}</strong>
+{{ ui::status_pill(b.pill_class, b.status_word, b.pill_icon) }}
+</div>
+{{ ui::pin_view(b.pin) }}
+{% if b.status == "completed" %}
+{{ ui::proof(b.id, b.occurrence_id, date) }}
+{% endif %}
+</div>

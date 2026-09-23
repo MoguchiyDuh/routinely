@@ -12,3 +12,47 @@
 <form method="post" action="/logout"><button type="submit" class="menu-item"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#log-out"/></svg>Log out</button></form>
 </div>
 {%- endmacro %}
+{% macro status_pill(pill_class, word, icon) -%}
+<span class="pill {{ pill_class }}"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#{{ icon }}"/></svg><span class="pill-word">{{ word }}</span></span>
+{%- endmacro %}
+{% macro tick(routine_id, date, title) -%}
+<form class="tick-form" method="post" action="/occurrences/{{ routine_id }}/tick?date={{ date }}" hx-post="/occurrences/{{ routine_id }}/tick?date={{ date }}" hx-target="#routines" hx-swap="outerHTML">
+<button type="submit" class="tick-btn" aria-label="Mark {{ title }} done"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#check"/></svg></button>
+</form>
+{%- endmacro %}
+{% macro untick(routine_id, date, title) -%}
+<button type="button" class="tick-btn is-done" aria-label="Mark {{ title }} not done" hx-delete="/occurrences/{{ routine_id }}/tick?date={{ date }}" hx-target="#routines" hx-swap="outerHTML"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#check"/></svg></button>
+{%- endmacro %}
+{% macro pin_view(pin) -%}
+{% if let Some(p) = pin %}
+<div class="pin-view">
+{% match p.thumb %}
+{% when Some with (url) %}
+<img class="thumb" src="{{ url }}" alt="">
+{% when None %}
+<svg class="icon" aria-hidden="true"><use href="/static/icons.svg#paperclip"/></svg>
+{% endmatch %}
+<span class="pin-summary">{{ p.summary }}</span>
+{% if !p.links.is_empty() %}
+<ul class="pin-links">
+{% for link in p.links %}
+<li><a href="{{ link }}">{{ link }}</a></li>
+{% endfor %}
+</ul>
+{% endif %}
+</div>
+{% endif %}
+{%- endmacro %}
+{% macro proof(routine_id, occurrence_id, date) -%}
+{% if let Some(oid) = occurrence_id %}
+<details class="proof">
+<summary><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#image"/></svg>Add proof</summary>
+<form class="proof-body" method="post" action="/occurrences/{{ oid }}/pin?date={{ date }}" enctype="multipart/form-data" hx-post="/occurrences/{{ oid }}/pin?date={{ date }}" hx-target="#routines" hx-swap="outerHTML">
+<input name="summary" required placeholder="What did you do?" aria-label="Proof summary">
+<input name="link_url" type="url" placeholder="https://link (optional)" aria-label="Proof link">
+<input type="file" name="photos" multiple accept=".png,.jpeg,.webp" aria-label="Proof photos">
+<button type="submit" class="btn btn-primary btn-sm">Save proof</button>
+</form>
+</details>
+{% endif %}
+{%- endmacro %}

@@ -1,6 +1,44 @@
-<section id="routines" class="card">
-<h2>routines</h2>
+<section id="routines" class="routines card" aria-label="Routines">
+{% if has_routines %}
+<div class="routines-head">
+{% if progress_total > 0 %}
+<div class="progress-ring" style="--p: {{ progress_percent }}" role="img" aria-label="{{ progress_done }} of {{ progress_total }} routines done"><span class="tnum">{{ progress_done }}/{{ progress_total }}</span></div>
+{% endif %}
+<p class="routine-sub tnum">{{ progress_done }} of {{ progress_total }} done</p>
+</div>
+{% if !rows.is_empty() %}
+<h3 class="section-title">Anytime</h3>
+<div class="anytime">
 {% for r in rows %}
 {% include "_routine_row.html" %}
 {% endfor %}
+</div>
+{% endif %}
+{% if rows.is_empty() && blocks.is_empty() %}
+<div class="empty">
+<svg class="icon" aria-hidden="true"><use href="/static/icons.svg#calendar-days"/></svg>
+<p>Nothing scheduled for this day.</p>
+</div>
+{% endif %}
+<div class="timeline" {% if is_today %}style="--now: {{ now_min }}" data-now-line data-scroll-now{% endif %}>
+{% for h in hours %}
+<div class="hour"><span class="hour-label">{{ h }}</span></div>
+{% endfor %}
+{% for b in blocks %}
+{% include "_block.html" %}
+{% endfor %}
+{% for m in markers %}
+<span class="tl-marker{% if m.done %} is-done{% endif %}{% if m.overdue %} is-overdue{% endif %}" style="--start: {{ m.start_min }}"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#clock"/></svg><span class="tnum">{{ m.time_label }}</span> {{ m.title }}</span>
+{% endfor %}
+{% if is_today %}
+<div class="now-line"><span class="now-time"></span></div>
+{% endif %}
+</div>
+{% else %}
+<div class="empty">
+<svg class="icon" aria-hidden="true"><use href="/static/icons.svg#repeat"/></svg>
+<p>No routines yet.</p>
+<a class="btn btn-primary" href="/routines/new">Create your first routine</a>
+</div>
+{% endif %}
 </section>

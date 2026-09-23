@@ -2,18 +2,51 @@
 {% block title %}Today{% endblock %}
 {% block pagetitle %}Today{% endblock %}
 {% block content %}
-<h1>{{ date }}</h1>
-<p class="pager">
-<a href="/day?date={{ prev_date }}">prev</a>
+<div class="page page-wide">
+<header class="day-header">
+<div class="day-heading">
+<h1>{{ weekday }}, <span class="tnum">{{ date_label }}</span></h1>
+<nav class="date-strip" aria-label="Date navigation">
+<a class="btn btn-icon btn-secondary" href="/day?date={{ prev_date }}" aria-label="Previous day"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#chevron-left"/></svg></a>
 {% if is_today %}
-<span class="current">today</span>
+<span class="current">Today</span>
 {% else %}
-<a href="/day">today</a>
+<a class="btn btn-secondary" href="/day">Today</a>
 {% endif %}
-<a href="/day?date={{ next_date }}">next</a>
-<a href="/week?date={{ date }}">week</a>
-</p>
-{% include "_routine.html" %}
+<a class="btn btn-icon btn-secondary" href="/day?date={{ next_date }}" aria-label="Next day"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#chevron-right"/></svg></a>
+<form method="get" action="/day" class="date-form">
+<input type="date" name="date" value="{{ date }}" aria-label="Jump to date">
+<button type="submit" class="btn btn-secondary">Go</button>
+</form>
+</nav>
+</div>
+</header>
+{% if let Some(o) = onboarding %}
+<section class="card onboarding" aria-label="Getting started">
+<div class="card-header">
+<h2>Get started</h2>
+<form method="post" action="/onboarding/dismiss" class="onboarding-dismiss">
+<button type="submit" class="btn btn-ghost btn-sm">Dismiss</button>
+</form>
+</div>
+<ul class="onboarding-steps">
+{% for s in o.steps %}
+<li class="onboarding-step{% if s.done %} done{% endif %}">
+<svg class="icon" aria-hidden="true"><use href="/static/icons.svg#{{ s.icon }}"/></svg>
+<span class="step-label">{{ s.label }}</span>
+{% if !s.done %}
+{% if let Some(href) = s.href %}
+<a class="btn btn-sm" href="{{ href }}">{{ s.action }}</a>
+{% endif %}
+{% endif %}
+</li>
+{% endfor %}
+</ul>
+</section>
+{% endif %}
+<div class="day-layout">
 {% include "_todo.html" %}
-{% include "_note.html" %}
+{% include "_routine.html" %}
+</div>
+</div>
 {% endblock %}

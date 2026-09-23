@@ -1370,13 +1370,31 @@ tbody tr:hover {
 .day-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "overdue" "routines" "panel";
   gap: var(--sp-5);
   align-items: start;
+}
+
+.todo-region {
+  display: contents;
+}
+
+.day-layout .overdue {
+  grid-area: overdue;
+}
+
+.day-layout .routines {
+  grid-area: routines;
+}
+
+.day-layout .side-panel {
+  grid-area: panel;
 }
 
 @media (min-width: 1100px) {
   .day-layout {
     grid-template-columns: minmax(0, 1fr) 340px;
+    grid-template-areas: "overdue panel" "routines panel" ". panel";
   }
 }
 
@@ -1476,7 +1494,6 @@ tbody tr:hover {
 
 .timeline {
   position: relative;
-  overflow: hidden;
   --tlx: var(--tl-gutter);
 }
 
@@ -1517,7 +1534,6 @@ tbody tr:hover {
   color: var(--text);
   font-size: var(--text-xs);
   line-height: 1.25;
-  overflow: hidden;
   text-decoration: none;
 }
 
@@ -2493,6 +2509,279 @@ tbody tr:hover {
   margin: 0;
 }
 
+.routines-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+
+.routines-head .routine-sub {
+  margin: 0;
+}
+
+.date-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.date-form input[type="date"] {
+  width: auto;
+}
+
+.onboarding-dismiss {
+  display: inline-flex;
+  margin: 0 0 0 auto;
+}
+
+.step-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.tick-form {
+  display: inline-flex;
+  flex: none;
+  margin: 0;
+}
+
+.tick-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  min-height: 26px;
+  padding: 0;
+  border: 1.5px solid var(--border-strong);
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  color: transparent;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+
+.tick-btn:hover {
+  border-color: var(--success);
+  background: var(--surface-3);
+}
+
+.tick-btn .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.tick-btn:focus-visible {
+  color: var(--muted);
+}
+
+.tick-btn.is-done {
+  border-color: var(--success);
+  background: var(--success);
+  color: #fff;
+}
+
+.tick-btn.is-done:hover {
+  border-color: var(--success);
+  background: var(--success);
+}
+
+.todo-toggle {
+  display: inline-flex;
+  flex: none;
+  padding-top: 2px;
+  margin: 0;
+}
+
+.todo-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.todo-title {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.todo-delete {
+  flex: none;
+  color: var(--muted);
+}
+
+.todo-more {
+  flex-basis: 100%;
+}
+
+.todo-more > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  list-style: none;
+}
+
+.todo-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.todo-more > summary:hover {
+  color: var(--text);
+}
+
+.todo-more > summary .icon {
+  width: 14px;
+  height: 14px;
+  transition: transform var(--dur-fast) var(--ease);
+}
+
+.todo-more[open] > summary .icon {
+  transform: rotate(180deg);
+}
+
+.todo-more-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-2) 0;
+}
+
+.save-state {
+  margin-left: auto;
+  color: var(--success);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.note-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--sp-2);
+}
+
+.pin-view {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+  min-width: 0;
+}
+
+.pin-view .icon {
+  width: 14px;
+  height: 14px;
+  color: var(--muted);
+}
+
+.pin-summary {
+  font-size: var(--text-sm);
+  color: var(--text-2);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pin-links {
+  flex-basis: 100%;
+  margin: 0;
+  padding-left: 16px;
+  font-size: var(--text-xs);
+}
+
+.tl-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+.tl-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tl-block .pill {
+  flex: none;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.tl-block {
+  container-type: inline-size;
+}
+
+@container (max-width: 200px) {
+  .tl-block .pill {
+    padding: 2px;
+  }
+
+  .tl-block .pill-word {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+.timeline {
+  margin-top: var(--sp-5);
+}
+
+.tl-block .pin-view .thumb {
+  width: 22px;
+  height: 22px;
+}
+
+.tl-block .pin-links {
+  display: none;
+}
+
+.tl-block .proof {
+  margin-top: 4px;
+}
+
+.tl-block .proof > summary {
+  padding: 2px var(--sp-1);
+}
+
+.tl-block .proof[open] {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  width: min(300px, 72vw);
+  margin: 0;
+  box-shadow: var(--shadow-2);
+}
+
+.tl-marker.is-done {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.tl-marker.is-overdue {
+  border-color: rgba(255, 107, 98, 0.5);
+  color: var(--danger);
+}
+
+.tl-marker.is-overdue .icon {
+  color: var(--danger);
+}
+
 @media (max-width: 899.98px) {
   .btn {
     min-height: 44px;
@@ -2510,6 +2799,18 @@ tbody tr:hover {
   input.check {
     width: 28px;
     height: 28px;
+  }
+  .tick-btn {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    min-height: 32px;
+  }
+  .tl-block .tick-btn {
+    width: 26px;
+    height: 26px;
+    min-width: 26px;
+    min-height: 26px;
   }
   .date-strip input[type="date"] {
     min-height: 44px;

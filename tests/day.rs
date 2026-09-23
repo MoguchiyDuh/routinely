@@ -1056,3 +1056,148 @@ async fn routine_create_validation_rules() {
         "valid count create failed: {valid_count:?}"
     );
 }
+
+#[test]
+fn overlap_columns_two_overlapping_and_one_separate() {
+    let spans = [(0, 60), (30, 90), (120, 150)];
+    let result = routinely::web::day::overlap_columns(&spans);
+    assert_eq!(
+        result,
+        vec![(1, 2), (2, 2), (1, 1)],
+        "overlap must spread into columns per cluster"
+    );
+}
+
+#[tokio::test]
+async fn onboarding_checklist_shown_for_fresh_user() {
+    let server = setup("onboarding-fresh").await;
+    let token = signup_user(&server, "onboardfresh", "UTC").await;
+    let page = get_page(&server, "/day", &token).await;
+    assert_eq!(page.status, 200, "day page failed: {page:?}");
+    assert!(
+        page.body.contains(r#"class="card onboarding""#),
+        "fresh user must see the checklist: {}",
+        page.body
+    );
+    assert!(
+        page.body.contains("Create your first routine"),
+        "checklist steps missing: {}",
+        page.body
+    );
+    let (dismissed,): (Option<String>,) =
+        sqlx::query_as("SELECT onboarding_dismissed_at FROM users WHERE username = 'onboardfresh'")
+            .fetch_one(&server.pool)
+            .await
+            .unwrap();
+    assert!(dismissed.is_none(), "column must start NULL");
+}
+
+#[tokio::test]
+async fn onboarding_dismiss_sets_column_and_hides_checklist() {
+    let server = setup("onboarding-dismiss").await;
+    let token = signup_user(&server, "onboarder", "UTC").await;
+    let cookie = format!("session={token}");
+    let response = request(
+        server.addr,
+        "POST",
+        "/onboarding/dismiss",
+        &[
+            ("Cookie", cookie.as_str()),
+            ("Content-Type", "application/x-www-form-urlencoded"),
+        ],
+        b"",
+    )
+    .await;
+    assert_eq!(response.status, 303, "dismiss must redirect: {response:?}");
+    assert_eq!(response.header("location").as_deref(), Some("/day"));
+    let (dismissed,): (Option<String>,) =
+        sqlx::query_as("SELECT onboarding_dismissed_at FROM users WHERE username = 'onboarder'")
+            .fetch_one(&server.pool)
+            .await
+            .unwrap();
+    assert!(dismissed.is_some(), "dismiss must set the column");
+    let page = get_page(&server, "/day", &token).await;
+    assert_eq!(page.status, 200);
+    assert!(
+        !page.body.contains(r#"class="card onboarding""#),
+        "checklist must be hidden after dismiss: {}",
+        page.body
+    );
+    let api = json_call(
+        &server,
+        "POST",
+        "/api/v1/me/onboarding/dismiss",
+        &token,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(api.status, 200, "api dismiss failed: {api:?}");
+    assert_eq!(api.json()["ok"], true);
+}
+
+#[tokio::test]
+async fn htmx_tick_returns_routines_fragment_and_updates_state() {
+    let server = setup("htmx-tick").await;
+    let token = signup_user(&server, "htmxer", "UTC").await;
+    let id = create_routine(
+        &server,
+        &token,
+        serde_json::json!({
+            "title": "htmx gym",
+            "kind": "weekdays",
+            "weekdays": all_weekdays(),
+        }),
+    )
+    .await;
+    let cookie = format!("session={token}");
+    let tick = request(
+        server.addr,
+        "POST",
+        &format!("/occurrences/{id}/tick"),
+        &[
+            ("Cookie", cookie.as_str()),
+            ("HX-Request", "true"),
+            ("Content-Type", "application/x-www-form-urlencoded"),
+        ],
+        b"",
+    )
+    .await;
+    assert_eq!(tick.status, 200, "htmx tick failed: {tick:?}");
+    assert!(
+        tick.body.contains(r#"id="routines""#),
+        "tick must return the routines region: {}",
+        tick.body
+    );
+    assert!(
+        tick.body.contains("htmx gym"),
+        "fragment must contain the routine: {}",
+        tick.body
+    );
+    let (completions,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM completions c JOIN occurrences o ON o.id = c.occurrence_id \
+         WHERE o.routine_id = ?",
+    )
+    .bind(id)
+    .fetch_one(&server.pool)
+    .await
+    .unwrap();
+    assert_eq!(completions, 1, "tick must create a completion");
+    let untick = request(
+        server.addr,
+        "DELETE",
+        &format!("/occurrences/{id}/tick"),
+        &[("Cookie", cookie.as_str()), ("HX-Request", "true")],
+        b"",
+    )
+    .await;
+    assert_eq!(untick.status, 200, "htmx untick failed: {untick:?}");
+    let (completions,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM completions c JOIN occurrences o ON o.id = c.occurrence_id \
+         WHERE o.routine_id = ?",
+    )
+    .bind(id)
+    .fetch_one(&server.pool)
+    .await
+    .unwrap();
+    assert_eq!(completions, 0, "untick must remove the completion");
+}
