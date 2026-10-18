@@ -204,6 +204,9 @@ async fn backdate_start(server: &Server, routine_id: i64, date: NaiveDate) {
 }
 
 async fn tick(server: &Server, token: &str, routine_id: i64, date: NaiveDate) -> i64 {
+    if date != routinely::store::user_today("UTC") {
+        return seed_tick(&server.pool, routine_id, date).await;
+    }
     let response = json_call(
         server,
         "PUT",
@@ -843,4 +846,17 @@ async fn json_twins_shapes_and_unauth() {
     )
     .await;
     assert_eq!(unauth_profile_api.status, 401);
+}
+
+async fn seed_tick(pool: &SqlitePool, routine_id: i64, date: NaiveDate) -> i64 {
+    let (user_id,): (i64,) = sqlx::query_as("SELECT user_id FROM routines WHERE id = ?")
+        .bind(routine_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    let routine = routinely::store::routine_for_user(pool, user_id, routine_id)
+        .await
+        .unwrap()
+        .unwrap();
+    return routinely::store::tick(pool, &routine, date, None).await.unwrap();
 }

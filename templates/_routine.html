@@ -1,44 +1,50 @@
-<section id="routines" class="routines card" aria-label="Routines">
+{% import "_macros.html" as ui %}
+<section id="routines" class="card schedule" aria-label="Routines">
 {% if has_routines %}
-<div class="routines-head">
-{% if progress_total > 0 %}
-<div class="progress-ring" style="--p: {{ progress_percent }}" role="img" aria-label="{{ progress_done }} of {{ progress_total }} routines done"><span class="tnum">{{ progress_done }}/{{ progress_total }}</span></div>
-{% endif %}
-<p class="routine-sub tnum">{{ progress_done }} of {{ progress_total }} done</p>
+<div class="schedule-head">
+<h2>Routines</h2>
+<div class="progress-meta">
+<span class="tnum">{{ progress_done }} of {{ progress_total }} done</span>
+<div class="progress" role="progressbar" aria-label="Routines done" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ progress_percent }}"><span style="--p: {{ progress_percent }}"></span></div>
 </div>
-{% if !rows.is_empty() %}
-<h3 class="section-title">Anytime</h3>
-<div class="anytime">
-{% for r in rows %}
-{% include "_routine_row.html" %}
-{% endfor %}
 </div>
+{% if locked && !readonly %}
+<p class="locked-note">{{ ui::ico("lock") }}Only today's routines can be ticked.</p>
 {% endif %}
 {% if rows.is_empty() && blocks.is_empty() %}
 <div class="empty">
-<svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#calendar-days"/></svg>
+{{ ui::ico("calendar-days") }}
 <p>Nothing scheduled for this day.</p>
+{% if !readonly %}<a class="btn btn-secondary" href="/routines/new">{{ ui::ico("plus") }}New routine</a>{% endif %}
 </div>
 {% endif %}
-<div class="timeline" {% if is_today %}style="--now: {{ now_min }}" data-now-line data-scroll-now{% endif %}>
-{% for h in hours %}
-<div class="hour"><span class="hour-label">{{ h }}</span></div>
-{% endfor %}
+{% if !blocks.is_empty() %}
+<h3 class="section-title">Scheduled</h3>
+<ol class="task-list">
 {% for b in blocks %}
+{% if b.now_before %}
+<li class="now-divider" aria-label="Now, {{ now_label }}"><span class="tnum">Now {{ now_label }}</span></li>
+{% endif %}
 {% include "_block.html" %}
 {% endfor %}
-{% for m in markers %}
-<span class="tl-marker{% if m.done %} is-done{% endif %}{% if m.overdue %} is-overdue{% endif %}" style="--start: {{ m.start_min }}"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#clock"/></svg><span class="tnum">{{ m.time_label }}</span> {{ m.title }}</span>
-{% endfor %}
-{% if is_today %}
-<div class="now-line"><span class="now-time"></span></div>
+{% if now_at_end %}
+<li class="now-divider" aria-label="Now, {{ now_label }}"><span class="tnum">Now {{ now_label }}</span></li>
 {% endif %}
-</div>
+</ol>
+{% endif %}
+{% if !rows.is_empty() %}
+<h3 class="section-title">Anytime</h3>
+<ul class="task-list">
+{% for r in rows %}
+{% include "_routine_row.html" %}
+{% endfor %}
+</ul>
+{% endif %}
 {% else %}
 <div class="empty">
-<svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#repeat"/></svg>
+{{ ui::ico("repeat") }}
 <p>No routines yet.</p>
-<a class="btn btn-primary" href="/routines/new">Create your first routine</a>
+{% if !readonly %}<a class="btn btn-primary" href="/routines/new">Create your first routine</a>{% endif %}
 </div>
 {% endif %}
 </section>

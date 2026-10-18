@@ -4,7 +4,10 @@
 {% block pagetitle %}Routines{% endblock %}
 {% block content %}
 <div class="page">
+<header class="page-head">
 <h1>Routines</h1>
+<a class="btn btn-primary" href="/routines/new">{{ ui::ico("plus") }}New routine</a>
+</header>
 {% if active.is_empty() && finished.is_empty() && archived.is_empty() %}
 <div class="card">
 <div class="empty">
@@ -14,7 +17,6 @@
 </div>
 </div>
 {% else %}
-<p class="preset-row"><a class="btn btn-primary" href="/routines/new"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#plus"/></svg>New routine</a></p>
 <section aria-labelledby="active-routines-title">
 <h2 class="section-title" id="active-routines-title">Active</h2>
 {% if active.is_empty() %}

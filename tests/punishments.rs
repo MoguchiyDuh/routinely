@@ -370,15 +370,7 @@ async fn closed_count_period_miss_records_marker_and_punishment_idempotently() {
     .await;
     let prev_monday = week_monday(today_utc()) - Days::new(7);
     backdate_routine_start(&server, id, prev_monday).await;
-    let tick = json_call(
-        &server,
-        "PUT",
-        &format!("/api/v1/occurrences/{id}/completion?date={prev_monday}"),
-        &token,
-        serde_json::json!({}),
-    )
-    .await;
-    assert_eq!(tick.status, 200, "tick failed: {tick:?}");
+    seed_tick(&server.pool, id, prev_monday).await;
     trigger_eval(&server, &token).await;
     let punishments: (i64,) = sqlx::query_as(
         "SELECT COUNT(*) FROM punishments WHERE occurrence_id IS NULL AND source = 'auto' AND status = 'pending'",
@@ -417,9 +409,9 @@ async fn closed_count_period_miss_records_marker_and_punishment_idempotently() {
 async fn cap_limits_auto_draws_to_three_per_user_day() {
     let server = setup("cap").await;
     let token = signup_user(&server, "erin").await;
-    let id = all_weekdays_routine(&server, &token).await;
-    for offset in 1..=4u64 {
-        insert_past_occurrence(&server, id, today_utc() - Days::new(offset)).await;
+    for _ in 0..4 {
+        let id = all_weekdays_routine(&server, &token).await;
+        insert_past_occurrence(&server, id, today_utc() - Days::new(1)).await;
     }
     trigger_eval(&server, &token).await;
     let total = count_scalar(&server, "SELECT COUNT(*) FROM punishments").await;
@@ -601,9 +593,9 @@ async fn manual_assign_by_catalog_and_custom_title_bypasses_cap() {
     let server = setup("manual-assign").await;
     let token = signup_user(&server, "ivan").await;
     let target = user_id(&server, &token).await;
-    let routine = all_weekdays_routine(&server, &token).await;
-    for offset in 1..=4u64 {
-        insert_past_occurrence(&server, routine, today_utc() - Days::new(offset)).await;
+    for _ in 0..4 {
+        let routine = all_weekdays_routine(&server, &token).await;
+        insert_past_occurrence(&server, routine, today_utc() - Days::new(1)).await;
     }
     trigger_eval(&server, &token).await;
     let drawn = count_scalar(
@@ -1291,4 +1283,131 @@ async fn ssr_clear_and_waive_redirect_to_origin_tab_with_new_flash() {
         .await
         .unwrap();
     assert_eq!(status, "waived");
+}
+
+async fn seed_tick(pool: &SqlitePool, routine_id: i64, date: NaiveDate) -> i64 {
+    let (user_id,): (i64,) = sqlx::query_as("SELECT user_id FROM routines WHERE id = ?")
+        .bind(routine_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    let routine = routinely::store::routine_for_user(pool, user_id, routine_id)
+        .await
+        .unwrap()
+        .unwrap();
+    return routinely::store::tick(pool, &routine, date, None).await.unwrap();
+}
+
+#[tokio::test]
+async fn cap_counts_per_missed_day_not_per_evaluation() {
+    let server = setup("cap-per-day").await;
+    let token = signup_user(&server, "pia").await;
+    let id = all_weekdays_routine(&server, &token).await;
+    for offset in 1..=4u64 {
+        insert_past_occurrence(&server, id, today_utc() - Days::new(offset)).await;
+    }
+    trigger_eval(&server, &token).await;
+    let drawn = count_scalar(
+        &server,
+        "SELECT COUNT(*) FROM punishments WHERE source = 'auto' AND catalog_id IS NOT NULL",
+    )
+    .await;
+    assert_eq!(drawn, 4, "one miss on each of four days must each draw");
+    let days = count_scalar(
+        &server,
+        "SELECT COUNT(DISTINCT miss_day) FROM punishments WHERE source = 'auto'",
+    )
+    .await;
+    assert_eq!(days, 4, "miss_day must be the occurrence date");
+}
+
+#[tokio::test]
+async fn count_miss_over_cap_is_visible_and_linked_to_routine() {
+    let server = setup("count-overflow").await;
+    let token = signup_user(&server, "quin").await;
+    let prev_monday = week_monday(today_utc()) - Days::new(7);
+    let prev_sunday = prev_monday + Days::new(6);
+    for _ in 0..3 {
+        let routine = all_weekdays_routine(&server, &token).await;
+        insert_past_occurrence(&server, routine, prev_sunday).await;
+    }
+    let goal = create_routine(
+        &server,
+        &token,
+        serde_json::json!({ "title": "swim", "kind": "count", "per_period": 2, "period": "week" }),
+    )
+    .await;
+    backdate_routine_start(&server, goal, prev_monday).await;
+    trigger_eval(&server, &token).await;
+    let row: (Option<i64>, Option<i64>, Option<String>, Option<String>) = sqlx::query_as(
+        "SELECT catalog_id, routine_id, period_start, miss_day FROM punishments WHERE source = 'auto' AND occurrence_id IS NULL",
+    )
+    .fetch_one(&server.pool)
+    .await
+    .unwrap();
+    assert_eq!(row.0, None, "fourth miss on the same day must not draw");
+    assert_eq!(row.1, Some(goal));
+    assert_eq!(row.2, Some(prev_monday.to_string()));
+    assert_eq!(row.3, Some(prev_sunday.to_string()));
+    let cookie = format!("session={token}");
+    let page = request(server.addr, "GET", "/punishments", &[("Cookie", cookie.as_str())], b"").await;
+    assert_eq!(page.status, 200);
+    assert!(
+        page.body.contains(&format!("missed swim goal in the week of {prev_monday}")),
+        "goal miss must be labelled: {}",
+        page.body
+    );
+    assert!(page.body.contains("Missed, no penalty drawn"));
+}
+
+#[tokio::test]
+async fn draws_prefer_penalties_not_already_pending() {
+    let server = setup("draw-spread").await;
+    let token = signup_user(&server, "rory").await;
+    let catalog = catalog_ids(&server).await.len();
+    let id = all_weekdays_routine(&server, &token).await;
+    for offset in 1..=u64::try_from(catalog).unwrap() {
+        insert_past_occurrence(&server, id, today_utc() - Days::new(offset)).await;
+    }
+    trigger_eval(&server, &token).await;
+    let distinct = count_scalar(
+        &server,
+        "SELECT COUNT(DISTINCT catalog_id) FROM punishments WHERE source = 'auto' AND catalog_id IS NOT NULL",
+    )
+    .await;
+    assert_eq!(
+        distinct,
+        i64::try_from(catalog).unwrap(),
+        "every catalog item must be used once before any repeats"
+    );
+}
+
+#[tokio::test]
+async fn history_shows_what_was_missed() {
+    let server = setup("history-source").await;
+    let token = signup_user(&server, "sam").await;
+    let id = all_weekdays_routine(&server, &token).await;
+    let missed = today_utc() - Days::new(1);
+    insert_past_occurrence(&server, id, missed).await;
+    trigger_eval(&server, &token).await;
+    let (penalty,): (i64,) = sqlx::query_as("SELECT id FROM punishments WHERE source = 'auto'")
+        .fetch_one(&server.pool)
+        .await
+        .unwrap();
+    let cleared = json_call(
+        &server,
+        "POST",
+        &format!("/api/v1/punishments/{penalty}/clear"),
+        &token,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(cleared.status, 200, "clear failed: {cleared:?}");
+    let cookie = format!("session={token}");
+    let page = request(server.addr, "GET", "/punishments", &[("Cookie", cookie.as_str())], b"").await;
+    let history = page.body.split("<h2>History</h2>").nth(1).unwrap_or_default();
+    assert!(
+        history.contains(&format!("missed daily drill on {missed}")),
+        "history must name the miss: {history}"
+    );
 }

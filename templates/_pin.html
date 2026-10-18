@@ -1,11 +1,17 @@
 <div id="pin-occ-{{ occurrence_id }}" class="pin">
 <p>{{ pin.summary }}</p>
+{% if !pin.links.is_empty() %}
 <ul>
 {% for link in pin.links %}
-<li><a href="{{ link }}">{{ link }}</a></li>
+<li><a href="{{ link }}" target="_blank" rel="noopener noreferrer">{{ link }}</a></li>
 {% endfor %}
 </ul>
+{% endif %}
+{% if !pin.photos.is_empty() %}
+<div class="pin-photos">
 {% for photo in pin.photos %}
-<img src="{{ photo }}" alt="photo">
+<a href="{{ photo }}" target="_blank" rel="noopener noreferrer"><img src="{{ photo }}" alt="Proof photo"></a>
 {% endfor %}
+</div>
+{% endif %}
 </div>

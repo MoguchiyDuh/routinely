@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}Journal{% endblock %}
+{% block pagetitle %}Journal{% endblock %}
+{% block content %}
+<div class="page">
+<header class="page-head">
+<div>
+<h1>Journal</h1>
+<p class="page-sub tnum">{{ scope_label }} · {{ note_count }} note{% if note_count != 1 %}s{% endif %} · {{ proof_count }} proof{% if proof_count != 1 %}s{% endif %}</p>
+</div>
+</header>
+{% include "_picker.html" %}
+<form class="card journal-filter" method="get" action="/journal">
+{% if readonly %}<input type="hidden" name="who" value="{{ who_value }}">{% endif %}
+<div class="input-row">
+<label class="visually-hidden" for="journal-q">Search notes and proofs</label>
+<input id="journal-q" type="search" name="q" value="{{ q }}" maxlength="100" placeholder="Search notes and proofs (e.g. book, film)" autocomplete="off">
+<button type="submit" name="range" value="{{ range }}" class="btn btn-primary">{{ ui::ico("search") }}Search</button>
+</div>
+<div class="chips journal-ranges" role="group" aria-label="Time range">
+{% for r in ranges %}
+{% if r.value != "custom" %}
+<button type="submit" name="range" value="{{ r.value }}" class="chip{% if r.active %} is-active{% endif %}"{% if r.active %} aria-pressed="true"{% else %} aria-pressed="false"{% endif %}>{{ r.label }}</button>
+{% endif %}
+{% endfor %}
+</div>
+<div class="journal-custom">
+<div class="field">
+<label for="journal-from">From</label>
+<input id="journal-from" type="date" name="from" value="{{ from_value }}">
+</div>
+<div class="field">
+<label for="journal-to">To</label>
+<input id="journal-to" type="date" name="to" value="{{ to_value }}">
+</div>
+<button type="submit" name="range" value="custom" class="btn btn-secondary{% if range == "custom" %} is-current{% endif %}">Apply dates</button>
+{% if !q.is_empty() %}
+<a class="btn btn-ghost" href="/journal?range={{ range }}&from={{ from_value }}&to={{ to_value }}{{ who_q }}">Clear search</a>
+{% endif %}
+</div>
+</form>
+{% if days.is_empty() %}
+<div class="card empty">
+{{ ui::ico("notebook-pen") }}
+<p>{% if q.is_empty() %}No notes or proofs in this range.{% else %}Nothing matches “{{ q }}” in this range.{% endif %}</p>
+{% if !readonly %}<a class="btn btn-secondary" href="/day">Write today's note</a>{% endif %}
+</div>
+{% else %}
+<div class="journal">
+{% for d in days %}
+<section class="card journal-day" aria-label="{{ d.label }}">
+<header class="journal-day-head">
+<h2><a href="/day?date={{ d.date }}{{ who_q }}">{{ d.label }}</a></h2>
+<a class="btn btn-ghost btn-sm" href="/day?date={{ d.date }}{{ who_q }}">Open day{{ ui::ico("chevron-right") }}</a>
+</header>
+{% if let Some(body) = d.note %}
+<div class="journal-note">
+<h3 class="section-title">{{ ui::ico("notebook-pen") }}Note</h3>
+<p class="journal-text">{{ body }}</p>
+</div>
+{% endif %}
+{% if !d.proofs.is_empty() %}
+<div class="journal-proofs">
+<h3 class="section-title">{{ ui::ico("paperclip") }}Proof</h3>
+<ul class="journal-proof-list">
+{% for p in d.proofs %}
+<li class="journal-proof">
+{% if readonly %}<span class="journal-proof-title">{{ p.title }}</span>{% else %}<a class="journal-proof-title" href="/routines/{{ p.routine_id }}/edit">{{ p.title }}</a>{% endif %}
+<p class="journal-text">{{ p.summary }}</p>
+{% if !p.links.is_empty() %}
+<p class="journal-links">
+{% for link in p.links %}
+<a class="pin-link" href="{{ link }}" target="_blank" rel="noopener noreferrer">{{ ui::ico("link") }}{{ link }}</a>
+{% endfor %}
+</p>
+{% endif %}
+{% if !p.photos.is_empty() %}
+<div class="pin-photos">
+{% for photo in p.photos %}
+<a href="{{ photo }}" target="_blank" rel="noopener noreferrer"><img src="{{ photo }}" alt="Proof photo"></a>
+{% endfor %}
+</div>
+{% endif %}
+</li>
+{% endfor %}
+</ul>
+</div>
+{% endif %}
+</section>
+{% endfor %}
+</div>
+{% endif %}
+</div>
+{% endblock %}

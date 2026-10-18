@@ -330,25 +330,9 @@ async fn count_routine_shows_progress_and_two_ticks_make_two_occurrences() {
     let entry = routine_entry(&day, id).unwrap();
     assert_eq!(entry["period_done"], 0);
     assert_eq!(entry["period_required"], 2);
-    let first = json_call(
-        &server,
-        "PUT",
-        &format!("/api/v1/occurrences/{id}/completion?date={monday}"),
-        &token,
-        serde_json::json!({}),
-    )
-    .await;
-    assert_eq!(first.status, 200, "first tick failed: {first:?}");
+    seed_tick(&server.pool, id, monday).await;
     let second_day = monday + Days::new(1);
-    let second = json_call(
-        &server,
-        "PUT",
-        &format!("/api/v1/occurrences/{id}/completion?date={second_day}"),
-        &token,
-        serde_json::json!({}),
-    )
-    .await;
-    assert_eq!(second.status, 200, "second tick failed: {second:?}");
+    seed_tick(&server.pool, id, second_day).await;
     let (rows,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM occurrences WHERE routine_id = ?")
         .bind(id)
         .fetch_one(&server.pool)
@@ -1200,4 +1184,131 @@ async fn htmx_tick_returns_routines_fragment_and_updates_state() {
     .await
     .unwrap();
     assert_eq!(completions, 0, "untick must remove the completion");
+}
+
+async fn seed_tick(pool: &SqlitePool, routine_id: i64, date: NaiveDate) -> i64 {
+    let (user_id,): (i64,) = sqlx::query_as("SELECT user_id FROM routines WHERE id = ?")
+        .bind(routine_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    let routine = routinely::store::routine_for_user(pool, user_id, routine_id)
+        .await
+        .unwrap()
+        .unwrap();
+    return routinely::store::tick(pool, &routine, date, None).await.unwrap();
+}
+
+#[tokio::test]
+async fn ticking_is_limited_to_today() {
+    let server = setup("tick-today-only").await;
+    let token = signup_user(&server, "tess", "UTC").await;
+    let id = create_routine(
+        &server,
+        &token,
+        serde_json::json!({ "title": "stretch", "kind": "weekdays", "weekdays": all_weekdays() }),
+    )
+    .await;
+    let today = today_utc();
+    backdate_start(&server, id, today - Days::new(3)).await;
+    let yesterday = today - Days::new(1);
+    let tomorrow = today + Days::new(1);
+    for day in [yesterday, tomorrow] {
+        let put = json_call(
+            &server,
+            "PUT",
+            &format!("/api/v1/occurrences/{id}/completion?date={day}"),
+            &token,
+            serde_json::json!({}),
+        )
+        .await;
+        assert_eq!(put.status, 422, "tick on {day} must be rejected: {put:?}");
+        let delete = json_call(
+            &server,
+            "DELETE",
+            &format!("/api/v1/occurrences/{id}/completion?date={day}"),
+            &token,
+            serde_json::json!({}),
+        )
+        .await;
+        assert_eq!(delete.status, 422, "untick on {day} must be rejected");
+    }
+    let completions = count_all(&server, "SELECT COUNT(*) FROM completions").await;
+    assert_eq!(completions, 0, "rejected ticks must not write");
+    let ok = json_call(
+        &server,
+        "PUT",
+        &format!("/api/v1/occurrences/{id}/completion?date={today}"),
+        &token,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(ok.status, 200, "tick today failed: {ok:?}");
+    let cookie = format!("session={token}");
+    let ssr = request(
+        server.addr,
+        "POST",
+        &format!("/occurrences/{id}/tick?date={yesterday}"),
+        &[
+            ("Cookie", cookie.as_str()),
+            ("Content-Type", "application/x-www-form-urlencoded"),
+            ("Accept", "text/html"),
+        ],
+        b"",
+    )
+    .await;
+    assert_eq!(ssr.status, 422);
+    assert!(
+        ssr.header("content-type").unwrap_or_default().starts_with("text/html"),
+        "browser gets an html error page: {ssr:?}"
+    );
+    assert!(ssr.body.contains("routines can be changed"), "{}", ssr.body);
+    let past = get_page(&server, &format!("/day?date={yesterday}"), &token).await;
+    assert_eq!(past.status, 200);
+    assert!(past.body.contains("locked-note"), "past day must show the lock note");
+    assert!(
+        !past.body.contains(&format!("/occurrences/{id}/tick?date={yesterday}")),
+        "past day must not offer a tick form"
+    );
+    let current = get_page(&server, &format!("/day?date={today}"), &token).await;
+    assert!(!current.body.contains("locked-note"));
+    assert!(current.body.contains(&format!("/occurrences/{id}/untick?date={today}")));
+}
+
+#[tokio::test]
+async fn html_error_page_for_browsers_json_for_api() {
+    let server = setup("error-pages").await;
+    let token = signup_user(&server, "erra", "UTC").await;
+    let cookie = format!("session={token}");
+    let browser = request(
+        server.addr,
+        "GET",
+        "/routines/999999/edit",
+        &[
+            ("Cookie", cookie.as_str()),
+            ("Accept", "text/html,application/xhtml+xml"),
+            ("Referer", "http://test/routines"),
+        ],
+        b"",
+    )
+    .await;
+    assert_eq!(browser.status, 404);
+    assert!(browser.body.contains("Not found"), "{}", browser.body);
+    assert!(browser.body.contains(r#"href="/routines""#), "back link from referer");
+    let foreign = request(
+        server.addr,
+        "GET",
+        "/routines/999999/edit",
+        &[
+            ("Cookie", cookie.as_str()),
+            ("Accept", "text/html"),
+            ("Referer", "http://evil.example/x"),
+        ],
+        b"",
+    )
+    .await;
+    assert!(!foreign.body.contains("evil.example"), "cross-origin referer ignored");
+    let api = get_page(&server, "/routines/999999/edit", &token).await;
+    assert_eq!(api.status, 404);
+    assert!(api.body.contains(r#""error":"not_found""#), "{}", api.body);
 }

@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}Month{% endblock %}
+{% block pagetitle %}Month{% endblock %}
+{% block content %}
+<div class="page page-wide">
+<header class="page-head">
+<div>
+<h1>{{ month_label }}</h1>
+<p class="page-sub">Click a day to open it, a week number for the week, an entry to edit it.</p>
+</div>
+<div class="head-actions">
+{{ ui::view_switch("month", switch_date, who_param) }}
+<nav class="date-nav" aria-label="Month navigation">
+<a class="btn btn-icon btn-secondary" href="{{ prev_href }}" aria-label="Previous month">{{ ui::ico("chevron-left") }}</a>
+<a class="btn btn-secondary" href="{{ this_month_href }}">This month</a>
+<a class="btn btn-icon btn-secondary" href="{{ next_href }}" aria-label="Next month">{{ ui::ico("chevron-right") }}</a>
+</nav>
+</div>
+</header>
+{% include "_picker.html" %}
+<div class="month" role="grid" aria-label="{{ month_label }}">
+<div class="month-head" role="row">
+<span class="month-wk" aria-hidden="true"></span>
+<span role="columnheader">Mon</span><span role="columnheader">Tue</span><span role="columnheader">Wed</span><span role="columnheader">Thu</span><span role="columnheader">Fri</span><span role="columnheader">Sat</span><span role="columnheader">Sun</span>
+</div>
+{% for w in weeks %}
+<div class="month-week" role="row">
+<a class="month-wk" href="{{ w.href }}" title="Open this week" aria-label="Open week {{ w.label }}">{{ w.label }}</a>
+{% if !w.bars.is_empty() %}
+<ul class="month-bars" aria-label="Weekly goals">
+{{ ui::goal_bars(&w.bars) }}
+</ul>
+{% endif %}
+{% for c in w.days %}
+<div class="month-cell{% if !c.in_month %} is-outside{% endif %}{% if c.is_today %} is-today{% endif %}" role="gridcell">
+<a class="month-day" href="/day?date={{ c.date }}{{ who_q }}" aria-label="Open {{ c.date }}"><span class="tnum">{{ c.day_num }}</span>{% if c.total > 0 %}<span class="month-count" aria-hidden="true">{{ c.total }}</span>{% endif %}</a>
+<ul class="month-items">
+{% for a in c.items %}
+<li><a class="month-item kind-{{ a.kind }} status-{{ a.status }}{% if a.planned %} is-planned{% endif %}" href="{{ a.href }}" title="{{ a.title }}">{% if a.kind == "deadline" %}{{ ui::ico("flag") }}{% endif %}{% if a.is_goal %}{{ ui::ico("repeat") }}{% endif %}{% if a.start_label != "" %}<span class="month-time tnum">{{ a.start_label }}</span>{% endif %}<span class="month-title">{{ a.title }}</span></a></li>
+{% endfor %}
+{% if c.more > 0 %}
+<li><a class="month-more" href="/day?date={{ c.date }}{{ who_q }}">+{{ c.more }} more</a></li>
+{% endif %}
+</ul>
+{% if c.total > 0 %}
+<a class="month-dots" href="/day?date={{ c.date }}{{ who_q }}" aria-hidden="true" tabindex="-1">{% for d in c.dots %}<i class="dot {{ d }}"></i>{% endfor %}</a>
+{% endif %}
+</div>
+{% endfor %}
+</div>
+{% endfor %}
+</div>
+</div>
+{% endblock %}

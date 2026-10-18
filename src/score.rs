@@ -162,6 +162,9 @@ pub fn describe_schedule(
 ) -> String {
     let mut parts: Vec<String> = Vec::new();
     parts.push(schedule_head(schedule));
+    if schedule.start_date > today {
+        parts.push(format!("starts {}", schedule.start_date.format("%a %-d %b")));
+    }
     parts.push(schedule_bounds(schedule, today));
     if let Some(time) = time_window(time_of_day, time_end) {
         parts.push(time);

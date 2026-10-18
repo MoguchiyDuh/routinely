@@ -1,0 +1,9 @@
+target
+data
+.git
+.k
+.env
+tests
+Dockerfile
+.dockerignore
+compose.yaml

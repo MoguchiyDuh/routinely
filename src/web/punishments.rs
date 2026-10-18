@@ -17,6 +17,7 @@ use crate::auth::extract::ApiAuth;
 use crate::auth::extract::PageAuth;
 use crate::auth::session::SessionUser;
 use crate::punish;
+use crate::store;
 use crate::punish::AssignTarget;
 
 use super::AvatarVm;
@@ -48,6 +49,7 @@ pub(crate) struct PenaltyVm {
 
 pub(crate) struct HistoryVm {
     pub title: String,
+    pub source_label: String,
     pub pill_class: &'static str,
     pub pill_word: &'static str,
     pub pill_icon: &'static str,
@@ -171,9 +173,9 @@ async fn build_page(
         let details = punish::list_user_details(&state.pool, auth.id).await?;
         for detail in &details {
             if detail.status == "pending" {
-                pending.push(penalty_vm(detail));
+                pending.push(penalty_vm(detail, &auth.timezone));
             } else {
-                history.push(history_vm(detail));
+                history.push(history_vm(detail, &auth.timezone));
             }
         }
         history.sort_by(|a, b| b.date.cmp(&a.date));
@@ -194,7 +196,7 @@ async fn build_page(
                 });
             }
             if let Some(group) = everyone.last_mut() {
-                group.items.push(penalty_vm(detail));
+                group.items.push(penalty_vm(detail, &auth.timezone));
             }
         }
         for group in &mut everyone {
@@ -623,25 +625,37 @@ fn clean_optional(raw: Option<&str>) -> Option<String> {
         .map(str::to_string);
 }
 
-fn penalty_vm(item: &punish::PunishmentDetail) -> PenaltyVm {
-    let source_label = if item.source == "auto" {
-        match (&item.missed_routine, &item.missed_date) {
-            (Some(routine), Some(date)) => format!("Auto · missed {routine} on {date}"),
+fn penalty_vm(item: &punish::PunishmentDetail, timezone: &str) -> PenaltyVm {
+    return PenaltyVm {
+        id: item.id,
+        title: fallback_title(item),
+        description: item.description.clone(),
+        source_label: source_label(item),
+        assigned_date: day_of(&item.assigned_at, timezone),
+    };
+}
+
+fn source_label(item: &punish::PunishmentDetail) -> String {
+    return if item.source == "auto" {
+        match (&item.missed_routine, &item.missed_date, &item.period_start) {
+            (Some(routine), Some(date), _) => format!("Auto · missed {routine} on {date}"),
+            (Some(routine), None, Some(start)) => {
+                let span = match item.missed_period.as_deref() {
+                    Some("day") => format!("on {start}"),
+                    Some("month") => format!("in the month of {start}"),
+                    Some("year") => format!("in the year from {start}"),
+                    _ => format!("in the week of {start}"),
+                };
+                format!("Auto · missed {routine} goal {span}")
+            }
             _ => "Auto".to_string(),
         }
     } else {
         "Assigned".to_string()
     };
-    return PenaltyVm {
-        id: item.id,
-        title: fallback_title(item),
-        description: item.description.clone(),
-        source_label,
-        assigned_date: day_of(&item.assigned_at),
-    };
 }
 
-fn history_vm(item: &punish::PunishmentDetail) -> HistoryVm {
+fn history_vm(item: &punish::PunishmentDetail, timezone: &str) -> HistoryVm {
     let (pill_class, pill_word, pill_icon) = if item.status == "cleared" {
         ("pill-done", "Cleared", "circle-check")
     } else {
@@ -649,12 +663,13 @@ fn history_vm(item: &punish::PunishmentDetail) -> HistoryVm {
     };
     return HistoryVm {
         title: fallback_title(item),
+        source_label: source_label(item),
         pill_class,
         pill_word,
         pill_icon,
         date: match &item.cleared_at {
-            Some(ts) => day_of(ts),
-            None => day_of(&item.assigned_at),
+            Some(ts) => day_of(ts, timezone),
+            None => day_of(&item.assigned_at, timezone),
         },
     };
 }
@@ -662,15 +677,21 @@ fn history_vm(item: &punish::PunishmentDetail) -> HistoryVm {
 fn fallback_title(item: &punish::PunishmentDetail) -> String {
     return item.title.clone().unwrap_or_else(|| {
         if item.source == "auto" && item.status == "pending" {
-            "missed — no punishment available".to_string()
+            "Missed, no penalty drawn".to_string()
         } else {
             "(removed)".to_string()
         }
     });
 }
 
-fn day_of(ts: &str) -> String {
-    return ts.get(..10).unwrap_or(ts).to_string();
+fn day_of(ts: &str, timezone: &str) -> String {
+    return match chrono::DateTime::parse_from_rfc3339(ts) {
+        Ok(at) => at
+            .with_timezone(&store::user_timezone(timezone))
+            .date_naive()
+            .to_string(),
+        Err(_) => ts.get(..10).unwrap_or(ts).to_string(),
+    };
 }
 
 fn catalog_vm(item: &punish::CatalogItem) -> CatalogVm {

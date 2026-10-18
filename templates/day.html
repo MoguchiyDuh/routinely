@@ -1,26 +1,29 @@
 {% extends "base.html" %}
 {% block title %}Today{% endblock %}
-{% block pagetitle %}Today{% endblock %}
+{% block pagetitle %}{% if is_today %}Today{% else %}{{ weekday }}{% endif %}{% endblock %}
 {% block content %}
 <div class="page page-wide">
-<header class="day-header">
-<div class="day-heading">
-<h1>{{ weekday }}, <span class="tnum">{{ date_label }}</span></h1>
-<nav class="date-strip" aria-label="Date navigation">
-<a class="btn btn-icon btn-secondary" href="/day?date={{ prev_date }}" aria-label="Previous day"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#chevron-left"/></svg></a>
-{% if is_today %}
-<span class="current">Today</span>
-{% else %}
-<a class="btn btn-secondary" href="/day">Today</a>
-{% endif %}
-<a class="btn btn-icon btn-secondary" href="/day?date={{ next_date }}" aria-label="Next day"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#chevron-right"/></svg></a>
+<header class="page-head">
+<div>
+<h1>{% if is_today %}Today{% else %}{{ weekday }}{% endif %}</h1>
+<p class="page-sub tnum">{% if is_today %}{{ weekday }}, {% endif %}{{ date_label }}</p>
+</div>
+<div class="head-actions">
+{{ ui::view_switch("day", date, who_param) }}
+<nav class="date-nav" aria-label="Date navigation">
+<a class="btn btn-icon btn-secondary" href="/day?date={{ prev_date }}{{ who_q }}" aria-label="Previous day">{{ ui::ico("chevron-left") }}</a>
+<a class="btn btn-secondary{% if is_today %} is-current{% endif %}" href="/day{% if !who_q.is_empty() %}?{{ who_q.trim_start_matches('&') }}{% endif %}"{% if is_today %} aria-current="date"{% endif %}>Today</a>
+<a class="btn btn-icon btn-secondary" href="/day?date={{ next_date }}{{ who_q }}" aria-label="Next day">{{ ui::ico("chevron-right") }}</a>
 <form method="get" action="/day" class="date-form">
-<input type="date" name="date" value="{{ date }}" aria-label="Jump to date">
-<button type="submit" class="btn btn-secondary">Go</button>
+{% if !who_param.is_empty() && who_param != "me" %}<input type="hidden" name="who" value="{{ who_param }}">{% endif %}
+<label class="visually-hidden" for="jump-date">Jump to date</label>
+<input id="jump-date" type="date" name="date" value="{{ date }}" data-autosubmit>
+<noscript><button type="submit" class="btn btn-secondary">Go</button></noscript>
 </form>
 </nav>
 </div>
 </header>
+{% include "_picker.html" %}
 {% if let Some(o) = onboarding %}
 <section class="card onboarding" aria-label="Getting started">
 <div class="card-header">
@@ -32,7 +35,7 @@
 <ul class="onboarding-steps">
 {% for s in o.steps %}
 <li class="onboarding-step{% if s.done %} done{% endif %}">
-<svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#{{ s.icon }}"/></svg>
+{{ ui::ico(s.icon) }}
 <span class="step-label">{{ s.label }}</span>
 {% if !s.done %}
 {% if let Some(href) = s.href %}
@@ -45,8 +48,13 @@
 </section>
 {% endif %}
 <div class="day-layout">
-{% include "_todo.html" %}
+<div class="day-main">
 {% include "_routine.html" %}
+</div>
+<div class="day-side">
+{% include "_todo.html" %}
+{% include "_note.html" %}
+</div>
 </div>
 </div>
 {% endblock %}

@@ -1,16 +1,20 @@
 {% import "_macros.html" as ui %}
-<div class="tl-block status-{{ b.status }}" style="--start: {{ b.start_min }}; --len: {{ b.len_min }}; --col: {{ b.col }}; --cols: {{ b.cols }}" aria-label="{{ b.title }}, {{ b.time_label }}, {{ b.status_word }}">
-<div class="tl-head">
-{% if b.status == "completed" %}
+<li class="task task-timed status-{{ b.status }}">
+<span class="task-time tnum">{{ b.start_label }}</span>
+{% if readonly || locked %}
+<span class="tick-btn is-static{% if b.status == "completed" %} is-done{% endif %}" aria-hidden="true">{{ ui::ico("check") }}</span>
+{% else if b.status == "completed" %}
 {{ ui::untick(b.id, date, b.title) }}
 {% else %}
 {{ ui::tick(b.id, date, b.title) }}
 {% endif %}
-<strong class="tl-title">{{ b.title }}</strong>
-{{ ui::status_pill(b.pill_class, b.status_word, b.pill_icon) }}
-</div>
+<div class="task-main">
+{% if readonly %}<span class="task-title">{{ b.title }}</span>{% else %}<a class="task-title" href="/routines/{{ b.id }}/edit" title="Edit routine">{{ b.title }}</a>{% endif %}
+<p class="task-sub tnum">{{ b.time_label }}</p>
 {{ ui::pin_view(b.pin) }}
-{% if b.status == "completed" %}
+</div>
+<div class="task-aside">{{ ui::status_pill(b.pill_class, b.status_word, b.pill_icon) }}</div>
+{% if b.status == "completed" && !readonly %}
 {{ ui::proof(b.id, b.occurrence_id, date, b.pin) }}
 {% endif %}
-</div>
+</li>

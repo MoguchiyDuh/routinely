@@ -1,12 +1,18 @@
+{% import "_macros.html" as ui %}
+{% if readonly %}
+<section id="note" class="card note-card" aria-label="Daily note">
+<div class="card-header"><h2>Note</h2></div>
+{% if let Some(text) = body %}<p class="note-readonly">{{ text }}</p>{% else %}<p class="hint">No note for this day.</p>{% endif %}
+</section>
+{% else %}
 <form id="note" class="card note-card" method="post" action="/notes/{{ date }}" aria-label="Daily note">
 <div class="card-header">
-<h2>Note</h2>
-{% if saved %}
-<span class="save-state" role="status">Saved</span>
-{% endif %}
+<h2><label for="note-body">Note</label></h2>
+<span id="note-status" class="save-state" role="status">{% if saved %}{{ ui::ico("check") }}Saved{% endif %}</span>
 </div>
-<textarea name="body" class="note-textarea" aria-label="Daily note" hx-post="/notes/{{ date }}" hx-trigger="input changed delay:800ms, blur" hx-target="#note" hx-swap="outerHTML" hx-preserve="true">{% if let Some(text) = body %}{{ text }}{% endif %}</textarea>
+<textarea id="note-body" name="body" class="note-textarea" placeholder="How did the day go?" hx-post="/notes/{{ date }}" hx-trigger="input changed delay:800ms, blur" hx-target="#note-status" hx-select="#note-status" hx-swap="outerHTML">{% if let Some(text) = body %}{{ text }}{% endif %}</textarea>
 <div class="note-actions">
-<button type="submit" class="btn btn-secondary btn-sm" hx-post="/notes/{{ date }}" hx-target="#note" hx-swap="outerHTML">Save note</button>
+<button type="submit" class="btn btn-secondary btn-sm" hx-post="/notes/{{ date }}" hx-target="#note-status" hx-select="#note-status" hx-swap="outerHTML">Save note</button>
 </div>
 </form>
+{% endif %}

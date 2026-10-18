@@ -4,7 +4,7 @@
 {% endif %}
 <div class="field">
 <label for="routine-title">Title</label>
-<input id="routine-title" name="title" maxlength="200" value="{{ form.title }}"{% if form.err_title.is_some() %} aria-invalid="true" aria-describedby="routine-title-error"{% endif %}>
+<input id="routine-title" name="title" maxlength="200" required autocomplete="off" value="{{ form.title }}"{% if form.err_title.is_some() %} aria-invalid="true" aria-describedby="routine-title-error"{% endif %}>
 {% if let Some(message) = form.err_title %}
 <p class="field-error" id="routine-title-error">{{ message }}</p>
 {% endif %}
@@ -43,7 +43,7 @@
 <button type="button" class="btn btn-sm" data-preset="all">Every day</button>
 </div>
 </div>
-<div class="when-count">
+<div class="when-count field-row">
 <div class="field">
 <label for="routine-per-period">Times per period</label>
 <input id="routine-per-period" name="per_period" type="number" min="1" placeholder="e.g. 3" value="{{ form.per_period }}"{% if form.err_per_period.is_some() %} aria-invalid="true" aria-describedby="routine-per-period-error"{% endif %}>
@@ -64,6 +64,15 @@
 {% endif %}
 </div>
 </div>
+{% if form.show_start %}
+<div class="field">
+<label for="routine-start-date">Starts <span class="hint-inline">leave empty for today</span></label>
+<input id="routine-start-date" name="start_date" type="date" value="{{ form.start_date }}"{% if form.err_start_date.is_some() %} aria-invalid="true" aria-describedby="routine-start-date-error"{% endif %}>
+{% if let Some(message) = form.err_start_date %}
+<p class="field-error" id="routine-start-date-error">{{ message }}</p>
+{% endif %}
+</div>
+{% endif %}
 <fieldset class="segmented">
 <legend>Duration</legend>
 <label><input type="radio" name="duration" value="forever"{% if form.duration_forever %} checked{% endif %}>Forever</label>
@@ -88,21 +97,23 @@
 {% endif %}
 </div>
 </div>
+<div class="field-row">
 <div class="field">
-<label for="routine-time-of-day">Start time <span class="hint">optional</span></label>
+<label for="routine-time-of-day">Start time <span class="hint-inline">optional</span></label>
 <input id="routine-time-of-day" name="time_of_day" type="time" value="{{ form.time_of_day }}"{% if form.err_time_of_day.is_some() %} aria-invalid="true" aria-describedby="routine-time-of-day-error"{% endif %}>
 {% if let Some(message) = form.err_time_of_day %}
 <p class="field-error" id="routine-time-of-day-error">{{ message }}</p>
 {% endif %}
 </div>
 <div class="field">
-<label for="routine-time-end">End time <span class="hint">optional</span></label>
+<label for="routine-time-end">End time <span class="hint-inline">optional</span></label>
 <input id="routine-time-end" name="time_end" type="time" value="{{ form.time_end }}"{% if form.err_time_end.is_some() %} aria-invalid="true" aria-describedby="routine-time-end-error"{% endif %}>
 {% if let Some(message) = form.err_time_end %}
 <p class="field-error" id="routine-time-end-error">{{ message }}</p>
 {% endif %}
 </div>
-<div class="routine-meta">
+</div>
+<div class="form-actions">
 <button type="submit" class="btn btn-primary">{{ form.submit_label }}</button>
 {% if form.cancel %}
 <a class="btn" href="/routines">Cancel</a>

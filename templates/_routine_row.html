@@ -1,23 +1,25 @@
 {% import "_macros.html" as ui %}
-<article class="routine-row status-{{ r.status }}">
-{% if r.status == "completed" %}
+<li class="task status-{{ r.status }}">
+{% if readonly || locked %}
+<span class="tick-btn is-static{% if r.status == "completed" %} is-done{% endif %}" aria-hidden="true">{{ ui::ico("check") }}</span>
+{% else if r.status == "completed" %}
 {{ ui::untick(r.id, date, r.title) }}
 {% else %}
 {{ ui::tick(r.id, date, r.title) }}
 {% endif %}
-<div class="routine-info">
-<p class="routine-title">{{ r.title }}</p>
+<div class="task-main">
+{% if readonly %}<span class="task-title">{{ r.title }}</span>{% else %}<a class="task-title" href="/routines/{{ r.id }}/edit" title="Edit routine">{{ r.title }}</a>{% endif %}
 {% if let Some(done) = r.period_done %}
 {% if let Some(required) = r.period_required %}
 {% if let Some(name) = r.period_name %}
-<p class="routine-sub tnum">{{ done }}/{{ required }} this {{ name }}</p>
+<p class="task-sub tnum">{{ done }}/{{ required }} this {{ name }}{% if !r.done_days.is_empty() %} &middot; {{ r.done_days }}{% endif %}</p>
 {% endif %}
 {% endif %}
 {% endif %}
 {{ ui::pin_view(r.pin) }}
-{% if r.status == "completed" %}
+</div>
+<div class="task-aside">{{ ui::status_pill(r.pill_class, r.status_word, r.pill_icon) }}</div>
+{% if r.status == "completed" && !readonly %}
 {{ ui::proof(r.id, r.occurrence_id, date, r.pin) }}
 {% endif %}
-</div>
-{{ ui::status_pill(r.pill_class, r.status_word, r.pill_icon) }}
-</article>
+</li>

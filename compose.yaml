@@ -1,0 +1,17 @@
+services:
+  routinely:
+    build:
+      context: .
+      target: runtime
+    image: routinely:latest
+    container_name: routinely
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    env_file: .env
+    volumes:
+      - routinely-data:/app/data
+
+volumes:
+  routinely-data:
+    name: routinely-data

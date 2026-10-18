@@ -1,78 +1,104 @@
+{% macro ico(name) -%}
+<svg class="icon" aria-hidden="true" focusable="false"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#{{ name }}"/></svg>
+{%- endmacro %}
 {% macro avatar(a, size) -%}
 <span class="avatar avatar-{{ size }}" data-color="{{ a.color }}" aria-hidden="true">
 {%- if a.kind == "photo" %}{% match a.photo_url %}{% when Some with (url) %}<img src="{{ url }}" alt="">{% when None %}{% endmatch %}
-{%- else if a.kind == "icon" %}{% match a.icon %}{% when Some with (icon) %}<svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#{{ icon }}"/></svg>{% when None %}{% endmatch %}
+{%- else if a.kind == "icon" %}{% match a.icon %}{% when Some with (icon) %}{{ ico(icon) }}{% when None %}{% endmatch %}
 {%- else %}{{ a.initials }}
 {%- endif %}</span>
 {%- endmacro %}
 {% macro menu_panel(user_id) -%}
 <div class="menu-panel">
-<a class="menu-item" href="/users/{{ user_id }}"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#user"/></svg>Profile</a>
-<a class="menu-item" href="/settings"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#settings"/></svg>Settings</a>
-<form method="post" action="/logout"><button type="submit" class="menu-item"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#log-out"/></svg>Log out</button></form>
+<a class="menu-item" href="/users/{{ user_id }}">{{ ico("user") }}Profile</a>
+<a class="menu-item" href="/settings">{{ ico("settings") }}Settings</a>
+<form method="post" action="/logout"><button type="submit" class="menu-item">{{ ico("log-out") }}Log out</button></form>
 </div>
 {%- endmacro %}
 {% macro status_pill(pill_class, word, icon) -%}
-<span class="pill {{ pill_class }}"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#{{ icon }}"/></svg><span class="pill-word">{{ word }}</span></span>
+<span class="pill {{ pill_class }}">{{ ico(icon) }}<span class="pill-word">{{ word }}</span></span>
 {%- endmacro %}
 {% macro tick(routine_id, date, title) -%}
 <form class="tick-form" method="post" action="/occurrences/{{ routine_id }}/tick?date={{ date }}" hx-post="/occurrences/{{ routine_id }}/tick?date={{ date }}" hx-target="#routines" hx-swap="outerHTML">
-<button type="submit" class="tick-btn" aria-label="Mark {{ title }} done"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#check"/></svg></button>
+<button type="submit" class="tick-btn" aria-label="Mark {{ title }} done" title="Mark done">{{ ico("check") }}</button>
 </form>
 {%- endmacro %}
 {% macro untick(routine_id, date, title) -%}
-<button type="button" class="tick-btn is-done" aria-label="Mark {{ title }} not done" hx-delete="/occurrences/{{ routine_id }}/tick?date={{ date }}" hx-target="#routines" hx-swap="outerHTML"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#check"/></svg></button>
+<form class="tick-form" method="post" action="/occurrences/{{ routine_id }}/untick?date={{ date }}" hx-post="/occurrences/{{ routine_id }}/untick?date={{ date }}" hx-target="#routines" hx-swap="outerHTML">
+<button type="submit" class="tick-btn is-done" aria-label="Mark {{ title }} not done" title="Mark not done">{{ ico("check") }}</button>
+</form>
 {%- endmacro %}
 {% macro pin_view(pin) -%}
 {% if let Some(p) = pin %}
 <div class="pin-view">
 {% match p.thumb %}
 {% when Some with (url) %}
-<img class="thumb" src="{{ url }}" alt="">
+<a href="{{ url }}" target="_blank" rel="noopener noreferrer"><img class="thumb" src="{{ url }}" alt="Proof photo"></a>
 {% when None %}
-<svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#paperclip"/></svg>
+{{ ico("paperclip") }}
 {% endmatch %}
 <span class="pin-summary">{{ p.summary }}</span>
-{% if !p.links.is_empty() %}
-<ul class="pin-links">
 {% for link in p.links %}
-<li><a href="{{ link }}">{{ link }}</a></li>
+<a class="pin-link" href="{{ link }}" target="_blank" rel="noopener noreferrer">{{ ico("link") }}Link</a>
 {% endfor %}
-</ul>
-{% endif %}
 </div>
 {% endif %}
 {%- endmacro %}
 {% macro week_pin(has_pin, occurrence_id, prefix) -%}
 {% if has_pin %}
 {% if let Some(oid) = occurrence_id %}
-<details class="proof" hx-get="/occurrences/{{ oid }}/pin" hx-trigger="toggle once" hx-target="#{{ prefix }}pin-occ-{{ oid }}" hx-swap="outerHTML"><summary><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#paperclip"/></svg>Proof</summary><div id="{{ prefix }}pin-occ-{{ oid }}"></div></details>
+<details class="proof proof-view" hx-get="/occurrences/{{ oid }}/pin" hx-trigger="toggle once" hx-target="#{{ prefix }}pin-occ-{{ oid }}" hx-swap="outerHTML"><summary>{{ ico("paperclip") }}View proof</summary><div id="{{ prefix }}pin-occ-{{ oid }}" class="proof-loading">Loading…</div></details>
 {% endif %}
 {% endif %}
 {%- endmacro %}
 {% macro proof(routine_id, occurrence_id, date, pin) -%}
 {% if let Some(oid) = occurrence_id %}
 <details class="proof">
-<summary><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#image"/></svg>{% if let Some(p) = pin %}Edit proof{% else %}Add proof{% endif %}</summary>
-<form class="proof-body" method="post" action="/occurrences/{{ oid }}/pin?date={{ date }}" enctype="multipart/form-data" hx-post="/occurrences/{{ oid }}/pin?date={{ date }}" hx-target="#routines" hx-swap="outerHTML">
-<input name="summary" required placeholder="What did you do?" aria-label="Proof summary"{% if let Some(p) = pin %} value="{{ p.summary }}"{% endif %}>
-<input name="link_url" type="url" placeholder="https://link (optional)" aria-label="Proof link">
-<input type="file" name="photos" multiple accept=".png,.jpeg,.webp" aria-label="Proof photos">
+<summary>{{ ico("image") }}{% if let Some(p) = pin %}Edit proof{% else %}Add proof{% endif %}</summary>
+<form class="proof-form" method="post" action="/occurrences/{{ oid }}/pin?date={{ date }}" enctype="multipart/form-data" hx-post="/occurrences/{{ oid }}/pin?date={{ date }}" hx-target="#routines" hx-swap="outerHTML" hx-encoding="multipart/form-data">
+<div class="field">
+<label for="proof-summary-{{ oid }}">What did you do?</label>
+<input id="proof-summary-{{ oid }}" name="summary" required maxlength="500"{% if let Some(p) = pin %} value="{{ p.summary }}"{% endif %}>
+</div>
+<div class="field">
+<label for="proof-link-{{ oid }}">Link <span class="hint-inline">optional</span></label>
+<input id="proof-link-{{ oid }}" name="link_url" type="url" placeholder="https://">
+</div>
+<div class="field">
+<label for="proof-photos-{{ oid }}">Photos <span class="hint-inline">optional · PNG, JPEG or WebP</span></label>
+<input id="proof-photos-{{ oid }}" type="file" name="photos" multiple accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp">
+</div>
+<div class="form-actions">
 <button type="submit" class="btn btn-primary btn-sm">Save proof</button>
+</div>
 </form>
 </details>
 {% endif %}
 {%- endmacro %}
 {% macro routine_card(item) -%}
 <article class="card routine-item">
-<div class="card-header"><h2>{{ item.title }}</h2></div>
+<div class="routine-item-main">
+<h2><a href="/routines/{{ item.id }}/edit">{{ item.title }}</a></h2>
 <p class="sched">{{ item.schedule }}</p>
 {% if let Some(pct) = item.pct_30d %}
 <p class="sched">{{ pct }} last 30 days</p>
 {% endif %}
-<div class="routine-meta">
-<a class="btn btn-sm" href="/routines/{{ item.id }}/edit"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#pencil"/></svg>Edit</a>
-<form method="post" action="/routines/{{ item.id }}/archive"><button type="submit" class="btn btn-sm"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#archive"/></svg>Archive</button></form>
+</div>
+<div class="routine-actions">
+<a class="btn btn-sm" href="/routines/{{ item.id }}/edit">{{ ico("pencil") }}Edit</a>
+<form method="post" action="/routines/{{ item.id }}/archive" data-confirm="Archive this routine? It stops showing up and no longer counts toward penalties."><button type="submit" class="btn btn-sm">{{ ico("archive") }}Archive</button></form>
 </div>
 </article>
+{%- endmacro %}
+{% macro view_switch(active, date, who) -%}
+<nav class="view-switch" aria-label="Calendar view">
+<a href="/day?date={{ date }}&who={{ who }}"{% if active == "day" %} aria-current="page"{% endif %}>Day</a>
+<a href="/week?date={{ date }}&who={{ who }}"{% if active == "week" %} aria-current="page"{% endif %}>Week</a>
+<a href="/month?date={{ date }}&who={{ who }}"{% if active == "month" %} aria-current="page"{% endif %}>Month</a>
+</nav>
+{%- endmacro %}
+{% macro goal_bars(bars) -%}
+{% for b in bars %}
+<li><a class="month-bar status-{{ b.status }}" href="{{ b.href }}" title="{{ b.tooltip }}">{{ ico("repeat") }}<span class="bar-title">{{ b.title }}</span>{% if b.pips.is_empty() %}<span class="bar-count tnum">{{ b.count_label }}</span>{% else %}<span class="bar-pips" role="img" aria-label="{{ b.count_label }} this week">{% for done in b.pips %}<i class="pip{% if done %} is-done{% endif %}"></i>{% endfor %}</span>{% endif %}{% if !b.days_label.is_empty() %}<span class="bar-days">{{ b.days_label }}</span>{% endif %}</a></li>
+{% endfor %}
 {%- endmacro %}

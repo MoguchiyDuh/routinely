@@ -28,7 +28,7 @@
 {% if let Some(desc) = p.description %}<p class="penalty-desc">{{ desc }}</p>{% endif %}
 <div class="penalty-actions">
 <form method="post" action="/punishments/{{ p.id }}/clear"><input type="hidden" name="tab" value="mine"><button type="submit" class="btn btn-primary btn-sm">Clear</button></form>
-<form method="post" action="/punishments/{{ p.id }}/waive"><input type="hidden" name="tab" value="mine"><button type="submit" class="btn btn-ghost btn-sm">Waive</button></form>
+<form method="post" action="/punishments/{{ p.id }}/waive" data-confirm="Waive this penalty? It will no longer need to be done."><input type="hidden" name="tab" value="mine"><button type="submit" class="btn btn-secondary btn-sm">Waive</button></form>
 </div>
 </article>
 {% endfor %}
@@ -45,7 +45,7 @@
 <div class="history-list">
 {% for h in history %}
 <div class="history-item">
-<span class="history-title">{{ h.title }}</span>
+<span class="history-main"><span class="history-title">{{ h.title }}</span><span class="history-source">{{ h.source_label }}</span></span>
 {{ ui::status_pill(h.pill_class, h.pill_word, h.pill_icon) }}
 <span class="history-date tnum">{{ h.date }}</span>
 </div>
@@ -77,7 +77,7 @@
 {% if g.is_self %}
 <div class="penalty-actions">
 <form method="post" action="/punishments/{{ p.id }}/clear"><input type="hidden" name="tab" value="everyone"><button type="submit" class="btn btn-primary btn-sm">Clear</button></form>
-<form method="post" action="/punishments/{{ p.id }}/waive"><input type="hidden" name="tab" value="everyone"><button type="submit" class="btn btn-ghost btn-sm">Waive</button></form>
+<form method="post" action="/punishments/{{ p.id }}/waive" data-confirm="Waive this penalty? It will no longer need to be done."><input type="hidden" name="tab" value="everyone"><button type="submit" class="btn btn-secondary btn-sm">Waive</button></form>
 </div>
 {% endif %}
 </article>
@@ -139,7 +139,7 @@
 {% if let Some(desc) = c.description %}<span class="catalog-desc">{{ desc }}</span>{% endif %}
 {% if c.active %}
 <span class="pill pill-done">Active</span>
-<form method="post" action="/catalog/{{ c.id }}/deactivate"><input type="hidden" name="tab" value="catalog"><button type="submit" class="btn btn-ghost btn-sm">Deactivate</button></form>
+<form method="post" action="/catalog/{{ c.id }}/deactivate"><input type="hidden" name="tab" value="catalog"><button type="submit" class="btn btn-secondary btn-sm">Deactivate</button></form>
 {% else %}
 <span class="pill pill-planned">Inactive</span>
 <form method="post" action="/catalog/{{ c.id }}/activate"><input type="hidden" name="tab" value="catalog"><button type="submit" class="btn btn-secondary btn-sm">Activate</button></form>

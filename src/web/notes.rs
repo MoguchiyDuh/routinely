@@ -54,6 +54,7 @@ async fn save_ssr(
             date: day,
             body,
             saved: true,
+            readonly: false,
         })?);
     }
     return Ok(Redirect::to(&format!("/day?date={day}")).into_response());

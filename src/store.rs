@@ -60,6 +60,7 @@ pub struct WeekOccurrenceRow {
     pub due_date: NaiveDate,
     pub completed: bool,
     pub has_pin: bool,
+    pub is_goal: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -76,6 +77,8 @@ pub struct WeekTodoRow {
     pub username: String,
     pub deadline: String,
     pub completed_at: Option<String>,
+    pub kind: String,
+    pub all_day: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -106,6 +109,7 @@ type WeekOccurrenceRecord = (
     String,
     bool,
     bool,
+    bool,
 );
 
 type RoutineWithUserRecord = (
@@ -133,13 +137,13 @@ pub async fn week_occurrences(
 ) -> Result<Vec<WeekOccurrenceRow>, sqlx::Error> {
     let rows: Vec<WeekOccurrenceRecord> = sqlx::query_as(
         "SELECT o.id, r.id, r.user_id, r.title, r.time_of_day, r.time_end, u.username, o.due_date, \
-         (c.id IS NOT NULL), (p.id IS NOT NULL) \
+         (c.id IS NOT NULL), (p.id IS NOT NULL), (o.period_start IS NOT NULL) \
          FROM occurrences o \
          JOIN routines r ON r.id = o.routine_id \
          JOIN users u ON u.id = r.user_id \
          LEFT JOIN completions c ON c.occurrence_id = o.id \
          LEFT JOIN pins p ON p.completion_id = c.id \
-         WHERE o.due_date >= ? AND o.due_date <= ? \
+         WHERE o.due_date >= ? AND o.due_date <= ? AND (r.archived_at IS NULL OR c.id IS NOT NULL) \
          ORDER BY o.due_date, o.id",
     )
     .bind(start.to_string())
@@ -160,6 +164,7 @@ pub async fn week_occurrences(
                 due_date,
                 completed,
                 has_pin,
+                is_goal,
             )| {
                 WeekOccurrenceRow {
                     occurrence_id,
@@ -172,6 +177,7 @@ pub async fn week_occurrences(
                     due_date: NaiveDate::parse_from_str(&due_date, "%Y-%m-%d").unwrap_or_default(),
                     completed,
                     has_pin,
+                    is_goal,
                 }
             },
         )
@@ -231,7 +237,16 @@ pub async fn active_routines_with_users(
     return Ok(out);
 }
 
-type WeekTodoRecord = (i64, i64, String, Option<String>, Option<String>, String);
+type WeekTodoRecord = (
+    i64,
+    i64,
+    String,
+    Option<String>,
+    Option<String>,
+    String,
+    String,
+    i64,
+);
 
 type PinAttachmentRecord = (i64, String, Option<String>, Option<String>, Option<String>);
 
@@ -241,7 +256,7 @@ pub async fn todos_with_deadline_between(
     until_utc_exclusive: &str,
 ) -> Result<Vec<WeekTodoRow>, sqlx::Error> {
     let rows: Vec<WeekTodoRecord> = sqlx::query_as(
-        "SELECT t.id, t.user_id, t.title, t.deadline, t.completed_at, u.username \
+        "SELECT t.id, t.user_id, t.title, t.deadline, t.completed_at, u.username, t.kind, t.all_day \
          FROM todos t JOIN users u ON u.id = t.user_id \
          WHERE t.deadline IS NOT NULL AND t.deadline >= ? AND t.deadline < ? \
          ORDER BY t.deadline, t.id",
@@ -253,13 +268,15 @@ pub async fn todos_with_deadline_between(
     return Ok(rows
         .into_iter()
         .map(
-            |(id, user_id, title, deadline, completed_at, username)| WeekTodoRow {
+            |(id, user_id, title, deadline, completed_at, username, kind, all_day)| WeekTodoRow {
                 id,
                 user_id,
                 title,
                 username,
                 deadline: deadline.unwrap_or_default(),
                 completed_at,
+                kind,
+                all_day: all_day != 0,
             },
         )
         .collect());
@@ -299,6 +316,39 @@ pub async fn period_completion_counts(
     .fetch_all(pool)
     .await?;
     return Ok(rows);
+}
+
+pub async fn period_completion_dates(
+    pool: &SqlitePool,
+) -> Result<Vec<(i64, String, String)>, sqlx::Error> {
+    let rows: Vec<(i64, String, String)> = sqlx::query_as(
+        "SELECT o.routine_id, o.period_start, o.due_date \
+         FROM occurrences o JOIN completions c ON c.occurrence_id = o.id \
+         WHERE o.period_start IS NOT NULL \
+         ORDER BY o.due_date",
+    )
+    .fetch_all(pool)
+    .await?;
+    return Ok(rows);
+}
+
+pub async fn period_done_dates(
+    pool: &SqlitePool,
+    routine_id: i64,
+    period_start: NaiveDate,
+) -> Result<Vec<NaiveDate>, sqlx::Error> {
+    let rows: Vec<(String,)> = sqlx::query_as(
+        "SELECT o.due_date FROM occurrences o JOIN completions c ON c.occurrence_id = o.id \
+         WHERE o.routine_id = ? AND o.period_start = ? ORDER BY o.due_date",
+    )
+    .bind(routine_id)
+    .bind(period_start.to_string())
+    .fetch_all(pool)
+    .await?;
+    return Ok(rows
+        .into_iter()
+        .filter_map(|(raw,)| NaiveDate::parse_from_str(&raw, "%Y-%m-%d").ok())
+        .collect());
 }
 
 pub async fn pins_for_occurrences(
@@ -355,6 +405,8 @@ pub struct TodoRow {
     pub notes: Option<String>,
     pub deadline: Option<String>,
     pub completed_at: Option<String>,
+    pub kind: String,
+    pub all_day: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -447,7 +499,15 @@ type RoutineRecord = (
     Option<String>,
 );
 
-type TodoRecord = (i64, String, Option<String>, Option<String>, Option<String>);
+type TodoRecord = (
+    i64,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    String,
+    i64,
+);
 
 fn routine_from_row(row: RoutineRecord) -> RoutineRow {
     return RoutineRow {
@@ -1137,15 +1197,19 @@ pub async fn create_todo(
     title: &str,
     notes: Option<&str>,
     deadline: Option<&str>,
+    kind: &str,
+    all_day: bool,
 ) -> Result<i64, sqlx::Error> {
     let id: i64 = sqlx::query_scalar(
-        "INSERT INTO todos (user_id, title, notes, deadline, completed_at, created_at) VALUES (?, ?, ?, ?, NULL, ?) RETURNING id",
+        "INSERT INTO todos (user_id, title, notes, deadline, completed_at, created_at, kind, all_day) VALUES (?, ?, ?, ?, NULL, ?, ?, ?) RETURNING id",
     )
     .bind(user_id)
     .bind(title)
     .bind(notes)
     .bind(deadline)
     .bind(Utc::now().to_rfc3339())
+    .bind(kind)
+    .bind(i64::from(all_day))
     .fetch_one(pool)
     .await?;
     return Ok(id);
@@ -1157,7 +1221,7 @@ pub async fn list_todos(
     now: &str,
 ) -> Result<Vec<TodoRow>, sqlx::Error> {
     let rows: Vec<TodoRecord> = sqlx::query_as(
-        "SELECT id, title, notes, deadline, completed_at FROM todos \
+        "SELECT id, title, notes, deadline, completed_at, kind, all_day FROM todos \
          WHERE user_id = ? \
          ORDER BY \
            CASE WHEN completed_at IS NULL AND deadline IS NOT NULL AND deadline < ? THEN 0 \
@@ -1172,13 +1236,17 @@ pub async fn list_todos(
     .await?;
     return Ok(rows
         .into_iter()
-        .map(|(id, title, notes, deadline, completed_at)| TodoRow {
-            id,
-            title,
-            notes,
-            deadline,
-            completed_at,
-        })
+        .map(
+            |(id, title, notes, deadline, completed_at, kind, all_day)| TodoRow {
+                id,
+                title,
+                notes,
+                deadline,
+                completed_at,
+                kind,
+                all_day: all_day != 0,
+            },
+        )
         .collect());
 }
 
@@ -1302,4 +1370,71 @@ pub async fn get_note(
             .fetch_optional(pool)
             .await?;
     return Ok(row.map(|(body,)| body));
+}
+
+const JOURNAL_LIMIT: i64 = 1000;
+
+pub type JournalPinRecord = (String, i64, i64, String, String);
+
+pub async fn journal_notes(
+    pool: &SqlitePool,
+    user_id: i64,
+    from: Option<NaiveDate>,
+    to: Option<NaiveDate>,
+    pattern: Option<&str>,
+) -> Result<Vec<(String, String)>, sqlx::Error> {
+    let from = from.map(|day| day.to_string());
+    let to = to.map(|day| day.to_string());
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT day, body FROM daily_notes \
+         WHERE user_id = ? AND TRIM(body) != '' \
+         AND (? IS NULL OR day >= ?) AND (? IS NULL OR day <= ?) \
+         AND (? IS NULL OR body LIKE ? ESCAPE '\\') \
+         ORDER BY day DESC LIMIT ?",
+    )
+    .bind(user_id)
+    .bind(&from)
+    .bind(&from)
+    .bind(&to)
+    .bind(&to)
+    .bind(pattern)
+    .bind(pattern)
+    .bind(JOURNAL_LIMIT)
+    .fetch_all(pool)
+    .await?;
+    return Ok(rows);
+}
+
+pub async fn journal_pins(
+    pool: &SqlitePool,
+    user_id: i64,
+    from: Option<NaiveDate>,
+    to: Option<NaiveDate>,
+    pattern: Option<&str>,
+) -> Result<Vec<JournalPinRecord>, sqlx::Error> {
+    let from = from.map(|day| day.to_string());
+    let to = to.map(|day| day.to_string());
+    let rows: Vec<JournalPinRecord> = sqlx::query_as(
+        "SELECT o.due_date, o.id, r.id, r.title, p.summary \
+         FROM pins p \
+         JOIN completions c ON c.id = p.completion_id \
+         JOIN occurrences o ON o.id = c.occurrence_id \
+         JOIN routines r ON r.id = o.routine_id \
+         WHERE r.user_id = ? \
+         AND (? IS NULL OR o.due_date >= ?) AND (? IS NULL OR o.due_date <= ?) \
+         AND (? IS NULL OR p.summary LIKE ? ESCAPE '\\' OR r.title LIKE ? ESCAPE '\\') \
+         ORDER BY o.due_date DESC, o.id DESC LIMIT ?",
+    )
+    .bind(user_id)
+    .bind(&from)
+    .bind(&from)
+    .bind(&to)
+    .bind(&to)
+    .bind(pattern)
+    .bind(pattern)
+    .bind(pattern)
+    .bind(JOURNAL_LIMIT)
+    .fetch_all(pool)
+    .await?;
+    return Ok(rows);
 }

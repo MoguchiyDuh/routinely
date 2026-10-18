@@ -24,6 +24,7 @@ use crate::store;
 
 use super::WebError;
 use super::WebResult;
+use super::ActionQuery;
 use super::day::DayQuery;
 use super::day::build_routines_section;
 use super::hex_encode;
@@ -53,6 +54,7 @@ struct PinJsonPayload {
 pub fn router() -> Router<AppState> {
     return Router::new()
         .route("/occurrences/{id}/tick", post(tick_ssr).delete(untick_ssr))
+        .route("/occurrences/{id}/untick", post(untick_ssr))
         .route("/occurrences/{id}/pin", post(pin_ssr).get(pin_fragment))
         .route(
             "/api/v1/occurrences/{id}/completion",
@@ -65,29 +67,31 @@ async fn tick_ssr(
     PageAuth(auth): PageAuth,
     State(state): State<AppState>,
     Path(routine_id): Path<i64>,
-    Query(query): Query<DayQuery>,
+    Query(query): Query<ActionQuery>,
     headers: HeaderMap,
     Form(payload): Form<TickPayload>,
 ) -> WebResult {
     let today = store::user_today(&auth.timezone);
     let day = parse_date_param(query.date.as_deref(), today)?;
+    ensure_today(day, today)?;
     let routine = load_active_routine(&state, auth.id, routine_id).await?;
     store::tick(&state.pool, &routine, day, payload.evidence_note.as_deref()).await?;
-    return finish_ssr(&state, &auth, day, today, &headers).await;
+    return finish_ssr(&state, &auth, day, today, &headers, &query).await;
 }
 
 async fn untick_ssr(
     PageAuth(auth): PageAuth,
     State(state): State<AppState>,
     Path(routine_id): Path<i64>,
-    Query(query): Query<DayQuery>,
+    Query(query): Query<ActionQuery>,
     headers: HeaderMap,
 ) -> WebResult {
     let today = store::user_today(&auth.timezone);
     let day = parse_date_param(query.date.as_deref(), today)?;
+    ensure_today(day, today)?;
     load_active_routine(&state, auth.id, routine_id).await?;
     store::untick(&state.pool, routine_id, day).await?;
-    return finish_ssr(&state, &auth, day, today, &headers).await;
+    return finish_ssr(&state, &auth, day, today, &headers, &query).await;
 }
 
 async fn pin_ssr(
@@ -156,6 +160,7 @@ async fn api_complete(
 ) -> Result<Response, WebError> {
     let today = store::user_today(&auth.timezone);
     let day = parse_date_param(query.date.as_deref(), today)?;
+    ensure_today(day, today)?;
     let routine = load_active_routine(&state, auth.id, routine_id).await?;
     let occurrence_id =
         store::tick(&state.pool, &routine, day, payload.evidence_note.as_deref()).await?;
@@ -178,6 +183,7 @@ async fn api_uncomplete(
 ) -> Result<Response, WebError> {
     let today = store::user_today(&auth.timezone);
     let day = parse_date_param(query.date.as_deref(), today)?;
+    ensure_today(day, today)?;
     load_active_routine(&state, auth.id, routine_id).await?;
     store::untick(&state.pool, routine_id, day).await?;
     return Ok((
@@ -213,13 +219,21 @@ async fn finish_ssr(
     day: NaiveDate,
     today: NaiveDate,
     headers: &HeaderMap,
+    query: &ActionQuery,
 ) -> WebResult {
     if is_htmx(headers) {
         let section =
             build_routines_section(&state.pool, auth.id, &auth.timezone, day, today).await?;
         return Ok(html(&section)?);
     }
-    return Ok(Redirect::to(&format!("/day?date={day}")).into_response());
+    return Ok(Redirect::to(&query.redirect_target(day)).into_response());
+}
+
+fn ensure_today(day: NaiveDate, today: NaiveDate) -> Result<(), WebError> {
+    if day != today {
+        return Err(WebError::Validation("only today's routines can be changed"));
+    }
+    return Ok(());
 }
 
 async fn load_active_routine(
@@ -280,6 +294,9 @@ fn photo_extension(file_name: &str) -> Result<String, WebError> {
         .and_then(|e| e.to_str())
         .map(|e| e.to_ascii_lowercase())
         .unwrap_or_default();
+    if ext == "jpg" {
+        return Ok("jpeg".to_string());
+    }
     if ext != "png" && ext != "jpeg" && ext != "webp" {
         return Err(WebError::Validation("photo must be png, jpeg or webp"));
     }

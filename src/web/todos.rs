@@ -11,6 +11,7 @@ use axum::routing::delete;
 use axum::routing::post;
 use chrono::NaiveDate;
 use chrono::NaiveDateTime;
+use chrono::NaiveTime;
 use chrono::TimeZone;
 use chrono::Utc;
 use serde::Deserialize;
@@ -22,6 +23,7 @@ use crate::store;
 
 use super::WebError;
 use super::WebResult;
+use super::ActionQuery;
 use super::day::DayQuery;
 use super::day::build_todos_section;
 use super::html;
@@ -33,6 +35,9 @@ struct TodoForm {
     title: Option<String>,
     notes: Option<String>,
     deadline: Option<String>,
+    kind: Option<String>,
+    date: Option<String>,
+    time: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -40,12 +45,22 @@ struct TodoJsonPayload {
     title: Option<String>,
     notes: Option<String>,
     deadline: Option<String>,
+    kind: Option<String>,
+    date: Option<String>,
+    time: Option<String>,
+}
+
+struct Due {
+    deadline: Option<String>,
+    all_day: bool,
+    kind: &'static str,
 }
 
 pub fn router() -> Router<AppState> {
     return Router::new()
         .route("/todos", post(create_ssr))
         .route("/todos/{id}", delete(delete_ssr))
+        .route("/todos/{id}/delete", post(delete_ssr))
         .route("/todos/{id}/toggle", post(toggle_ssr))
         .route("/api/v1/todos", post(api_create))
         .route("/api/v1/todos/{id}", delete(api_delete))
@@ -61,14 +76,23 @@ async fn create_ssr(
 ) -> WebResult {
     let today = store::user_today(&auth.timezone);
     let day = parse_date_param(query.date.as_deref(), today)?;
-    let deadline = parse_deadline(payload.deadline.as_deref(), &auth.timezone)?;
+    let due = resolve_due(
+        payload.kind.as_deref(),
+        payload.deadline.as_deref(),
+        payload.date.as_deref(),
+        payload.time.as_deref(),
+        Some(day),
+        &auth.timezone,
+    )?;
     let title = validate_title(payload.title.as_deref())?;
     store::create_todo(
         &state.pool,
         auth.id,
         &title,
         payload.notes.as_deref().map(str::trim),
-        deadline.as_deref(),
+        due.deadline.as_deref(),
+        due.kind,
+        due.all_day,
     )
     .await?;
     return finish_ssr(&state, &auth, day, today, &headers).await;
@@ -94,7 +118,7 @@ async fn toggle_ssr(
     PageAuth(auth): PageAuth,
     State(state): State<AppState>,
     Path(todo_id): Path<i64>,
-    Query(query): Query<DayQuery>,
+    Query(query): Query<ActionQuery>,
     headers: HeaderMap,
 ) -> WebResult {
     let today = store::user_today(&auth.timezone);
@@ -102,6 +126,9 @@ async fn toggle_ssr(
     let toggled = store::toggle_todo(&state.pool, auth.id, todo_id).await?;
     if !toggled {
         return Err(WebError::NotFound);
+    }
+    if !is_htmx(&headers) {
+        return Ok(Redirect::to(&query.redirect_target(day)).into_response());
     }
     return finish_ssr(&state, &auth, day, today, &headers).await;
 }
@@ -111,19 +138,30 @@ async fn api_create(
     State(state): State<AppState>,
     axum::Json(payload): axum::Json<TodoJsonPayload>,
 ) -> Result<Response, WebError> {
-    let deadline = parse_deadline(payload.deadline.as_deref(), &auth.timezone)?;
+    let due = resolve_due(
+        payload.kind.as_deref(),
+        payload.deadline.as_deref(),
+        payload.date.as_deref(),
+        payload.time.as_deref(),
+        None,
+        &auth.timezone,
+    )?;
     let title = validate_title(payload.title.as_deref())?;
     let id = store::create_todo(
         &state.pool,
         auth.id,
         &title,
         payload.notes.as_deref().map(str::trim),
-        deadline.as_deref(),
+        due.deadline.as_deref(),
+        due.kind,
+        due.all_day,
     )
     .await?;
     return Ok((
         axum::http::StatusCode::OK,
-        axum::Json(serde_json::json!({ "id": id, "title": title, "deadline": deadline })),
+        axum::Json(
+            serde_json::json!({ "id": id, "title": title, "deadline": due.deadline, "kind": due.kind, "all_day": due.all_day }),
+        ),
     )
         .into_response());
 }
@@ -182,16 +220,60 @@ fn validate_title(raw: Option<&str>) -> Result<String, WebError> {
     return Ok(title.to_string());
 }
 
-fn parse_deadline(raw: Option<&str>, timezone: &str) -> Result<Option<String>, WebError> {
-    let Some(raw) = raw else {
-        return Ok(None);
+fn non_empty(raw: Option<&str>) -> Option<&str> {
+    return raw.map(str::trim).filter(|value| !value.is_empty());
+}
+
+fn resolve_due(
+    kind_raw: Option<&str>,
+    deadline_raw: Option<&str>,
+    date_raw: Option<&str>,
+    time_raw: Option<&str>,
+    default_day: Option<NaiveDate>,
+    timezone: &str,
+) -> Result<Due, WebError> {
+    let kind = match non_empty(kind_raw) {
+        None | Some("todo") => "todo",
+        Some("deadline") => "deadline",
+        Some(_) => return Err(WebError::Validation("kind must be todo or deadline")),
     };
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return Ok(None);
+    let time = match non_empty(time_raw) {
+        Some(raw) => Some(
+            NaiveTime::parse_from_str(raw, "%H:%M")
+                .map_err(|_| WebError::Validation("time must be HH:MM"))?,
+        ),
+        None => None,
+    };
+    let date = match non_empty(date_raw) {
+        Some(raw) => Some(
+            NaiveDate::parse_from_str(raw, "%Y-%m-%d")
+                .map_err(|_| WebError::Validation("date must be YYYY-MM-DD"))?,
+        ),
+        None => None,
+    };
+    let date = match (date, time) {
+        (None, Some(_)) => default_day,
+        (value, _) => value,
+    };
+    let (deadline, all_day) = match date {
+        Some(day) => {
+            let end_of_day = NaiveTime::from_hms_opt(23, 59, 59).unwrap_or(NaiveTime::MIN);
+            let naive = day.and_time(time.unwrap_or(end_of_day));
+            (Some(local_to_utc(naive, timezone)?), time.is_none())
+        }
+        None => (parse_deadline(deadline_raw, timezone)?, false),
+    };
+    if kind == "deadline" && deadline.is_none() {
+        return Err(WebError::Validation("a deadline needs a date"));
     }
-    let naive = NaiveDateTime::parse_from_str(trimmed, "%Y-%m-%dT%H:%M")
-        .map_err(|_| WebError::Validation("deadline must be YYYY-MM-DDTHH:MM"))?;
+    return Ok(Due {
+        deadline,
+        all_day,
+        kind,
+    });
+}
+
+fn local_to_utc(naive: NaiveDateTime, timezone: &str) -> Result<String, WebError> {
     let tz = store::user_timezone(timezone);
     let local = match tz.from_local_datetime(&naive) {
         chrono::LocalResult::Single(value) => value,
@@ -202,5 +284,14 @@ fn parse_deadline(raw: Option<&str>, timezone: &str) -> Result<Option<String>, W
             ));
         }
     };
-    return Ok(Some(local.with_timezone(&Utc).to_rfc3339()));
+    return Ok(local.with_timezone(&Utc).to_rfc3339());
+}
+
+fn parse_deadline(raw: Option<&str>, timezone: &str) -> Result<Option<String>, WebError> {
+    let Some(trimmed) = non_empty(raw) else {
+        return Ok(None);
+    };
+    let naive = NaiveDateTime::parse_from_str(trimmed, "%Y-%m-%dT%H:%M")
+        .map_err(|_| WebError::Validation("deadline must be YYYY-MM-DDTHH:MM"))?;
+    return Ok(Some(local_to_utc(naive, timezone)?));
 }

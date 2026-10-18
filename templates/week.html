@@ -3,72 +3,94 @@
 {% block title %}Week{% endblock %}
 {% block pagetitle %}Week{% endblock %}
 {% block content %}
-<div class="page page-wide">
-<header class="day-header">
-<h1>Week, <span class="tnum">{{ week_start }} &ndash; {{ week_end }}</span></h1>
-<nav class="date-strip" aria-label="Week navigation">
-<a class="btn btn-icon btn-secondary" href="{{ prev_href }}" aria-label="Previous week"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#chevron-left"/></svg></a>
+<div class="page page-week">
+<header class="page-head">
+<div>
+<h1>Week</h1>
+<p class="page-sub tnum">{{ week_start }} &ndash; {{ week_end }}</p>
+</div>
+<div class="head-actions">
+{{ ui::view_switch("week", switch_date, who_param) }}
+<nav class="date-nav" aria-label="Week navigation">
+<a class="btn btn-icon btn-secondary" href="{{ prev_href }}" aria-label="Previous week">{{ ui::ico("chevron-left") }}</a>
 <a class="btn btn-secondary" href="{{ this_week_href }}">This week</a>
-<a class="btn btn-icon btn-secondary" href="{{ next_href }}" aria-label="Next week"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#chevron-right"/></svg></a>
+<a class="btn btn-icon btn-secondary" href="{{ next_href }}" aria-label="Next week">{{ ui::ico("chevron-right") }}</a>
 </nav>
+</div>
 </header>
-<nav class="week-filter chips" aria-label="Filter week by person">
-{% for c in chips %}
-<a class="chip{% if c.active %} is-active{% endif %}" href="{{ c.href }}"{% if c.active %} aria-current="page"{% endif %}>{% if let Some(a) = c.avatar %}{{ ui::avatar(&a, "sm") }}{% else %}<svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#users"/></svg>{% endif %}<span>{{ c.label }}</span></a>
-{% endfor %}
-</nav>
+{% include "_picker.html" %}
 {% if has_entries %}
-<div class="week-days">
-<div class="week-day week-corner" aria-hidden="true"></div>
-{% for day in days %}
-<h2 class="week-day{% if day.is_today %} is-today{% endif %}"><a href="/day?date={{ day.date }}">{{ day.weekday_label }} <span class="tnum">{{ day.day_num }}</span></a></h2>
+<div class="wk-grid" style="--hours: {{ grid_hours }}" role="grid" aria-label="Week {{ week_start }} to {{ week_end }}">
+<div class="wk-row wk-head" role="row">
+<div class="wk-gutter"></div>
+{% for c in cols %}
+<a class="wk-dayhead{% if c.is_today %} is-today{% endif %}{% if c.is_past %} is-past{% endif %}" href="/day?date={{ c.date }}{{ who_q }}" role="columnheader" aria-label="Open {{ c.weekday_label }} {{ c.date }}"><span class="wk-dow">{{ c.weekday_label }}</span><span class="wk-num tnum">{{ c.day_num }}</span></a>
 {% endfor %}
 </div>
-<div class="week-days week-anytime">
-<div class="week-day anytime-label">Anytime</div>
-{% for day in days %}
-<div class="week-day anytime-cell{% if day.is_today %} is-today{% endif %}">
-{% for a in day.anytime %}
-{% include "_week_anytime.html" %}
+{% if !goals.is_empty() %}
+<div class="wk-row wk-goals" role="row">
+<div class="wk-gutter wk-label">Goals</div>
+<div class="wk-span">
+{% for g in goals %}
+{% include "_goal_lane.html" %}
 {% endfor %}
 </div>
-{% endfor %}
 </div>
-<div class="week-grid with-axis" {% if has_today %}style="--now: {{ now_min }}" data-now-line data-scroll-now{% endif %}>
-<div class="week-axis" aria-hidden="true">
-{% for h in hours %}<span class="hour-label" style="--start: {{ loop.index0 * 60 }}">{{ h }}</span>{% endfor %}
-</div>
-{% for day in days %}
-<div class="week-col{% if day.is_today %} is-today{% endif %}">
-{% for b in day.blocks %}
-{% include "_week_block.html" %}
-{% endfor %}
-{% for m in day.markers %}
-<span class="tl-marker{% if m.done %} is-done{% endif %}{% if m.overdue %} is-overdue{% endif %}" style="--start: {{ m.start_min }}"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#clock"/></svg><span class="tnum">{{ m.time_label }}</span> {{ m.title }}{% if let Some(o) = m.owner %} <span class="user-dot" data-color="{{ o.color }}" title="{{ o.username }}"></span> <span class="owner-name">{{ o.username }}</span>{% endif %}</span>
-{% endfor %}
-{% if day.is_today %}
-<div class="now-line"><span class="now-time"></span></div>
 {% endif %}
+{% if has_all_day %}
+<div class="wk-row wk-allday" role="row">
+<div class="wk-gutter wk-label">All&#8209;day</div>
+{% for c in cols %}
+<div class="wk-cell{% if c.is_today %} is-today{% endif %}{% if c.is_past %} is-past{% endif %}" role="gridcell">
+{% for a in c.all_day %}
+{% include "_wk_event.html" %}
+{% endfor %}
 </div>
 {% endfor %}
 </div>
-<div class="agenda">
-{% for day in days %}
-<section class="agenda-day{% if day.is_today %} is-today{% endif %}">
-<h2 class="agenda-date"><a href="/day?date={{ day.date }}">{{ day.weekday_label }} <span class="tnum">{{ day.date }}</span></a></h2>
-{% if day.is_empty %}
-<p class="agenda-empty">Nothing scheduled</p>
-{% else %}
-{% for a in day.agenda %}
-{% include "_week_entry.html" %}
-{% endfor %}
 {% endif %}
+<div class="wk-row wk-body" role="row">
+<div class="wk-gutter wk-hours" aria-hidden="true">
+{% for h in hours %}{% if !loop.first %}<span class="tnum" style="top: calc({{ loop.index0 }} * var(--hour-h))">{{ h }}</span>{% endif %}{% endfor %}
+</div>
+{% for c in cols %}
+<div class="wk-col{% if c.is_today %} is-today{% endif %}{% if c.is_past %} is-past{% endif %}" role="gridcell" aria-label="{{ c.weekday_label }} {{ c.date }}">
+{% if let Some(top) = c.now_top %}<div class="wk-now" style="top: {{ top }}%" aria-hidden="true"></div>{% endif %}
+{% for a in c.blocks %}
+{% include "_wk_event.html" %}
+{% endfor %}
+</div>
+{% endfor %}
+</div>
+</div>
+<div class="wk-list">
+{% if !goals.is_empty() %}
+<section class="card wk-goals-card" aria-label="Weekly goals">
+<h2>{{ ui::ico("repeat") }}Weekly goals</h2>
+{% for g in goals %}
+{% include "_goal_lane.html" %}
+{% endfor %}
 </section>
+{% endif %}
+{% if !past_days.is_empty() %}
+<details class="wk-past">
+<summary>{{ ui::ico("chevron-down") }}Earlier this week<span class="wk-past-count tnum">{{ past_days.len() }} {% if past_days.len() == 1 %}day{% else %}days{% endif %}</span></summary>
+<div class="week">
+{% for day in past_days %}
+{% include "_week_day.html" %}
 {% endfor %}
 </div>
+</details>
+{% endif %}
+<div class="week">
+{% for day in days %}
+{% include "_week_day.html" %}
+{% endfor %}
+</div>
+</div>
 {% else %}
-<div class="empty">
-<svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#calendar-days"/></svg>
+<div class="card empty">
+{{ ui::ico("calendar-days") }}
 <p>Nothing scheduled this week.</p>
 <a class="btn btn-primary" href="/routines/new">Create a routine</a>
 </div>

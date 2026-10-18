@@ -44,6 +44,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(web::router())
         .nest_service("/static", static_files)
         .nest_service("/uploads", ServeDir::new(UPLOADS_DIR))
+        .layer(middleware::from_fn(web::html_errors))
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         .with_state(state);
 }

@@ -4,6 +4,7 @@ use std::time::Duration;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
+use chrono::Datelike;
 use chrono::Days;
 use chrono::NaiveDate;
 use chrono::Utc;
@@ -709,15 +710,7 @@ async fn heatmap_completed_day_level_4_missed_day_level_1() {
 
     let done_day = past(2);
     let missed_day = past(3);
-    let ticked = json_call(
-        &server,
-        "PUT",
-        &format!("/api/v1/occurrences/{routine_id}/completion?date={done_day}"),
-        &token,
-        serde_json::json!({}),
-    )
-    .await;
-    assert_eq!(ticked.status, 200, "tick failed: {ticked:?}");
+    seed_tick(&server.pool, routine_id, done_day).await;
 
     let days = score::heatmap(&server.pool, user_id, "UTC").await.unwrap();
     assert_eq!(days.len(), 84, "heatmap must cover 12 weeks");
@@ -729,9 +722,17 @@ async fn heatmap_completed_day_level_4_missed_day_level_1() {
     assert_eq!(missed_cell.done, 0);
     assert_eq!(missed_cell.expected, 1);
     assert_eq!(missed_cell.level, 1);
-    let future_cell = days.iter().find(|d| d.future).unwrap();
-    assert!(future_cell.date > today_utc());
-    assert_eq!(future_cell.level, 0);
+    let today = today_utc();
+    let last = days.last().unwrap();
+    assert_eq!(last.date.weekday(), chrono::Weekday::Sun, "heatmap must end on Sunday");
+    assert!(last.date >= today && last.date < today + chrono::Days::new(7));
+    for cell in &days {
+        assert_eq!(cell.future, cell.date > today, "future flag wrong on {}", cell.date);
+        if cell.future {
+            assert_eq!(cell.level, 0);
+            assert_eq!(cell.expected, 0);
+        }
+    }
 
     let page = get_page(&server, &format!("/users/{user_id}"), &token).await;
     assert_eq!(page.status, 200);
@@ -747,7 +748,11 @@ async fn heatmap_completed_day_level_4_missed_day_level_1() {
             .contains(&format!(r#"aria-label="{missed_day}: 0 of 1""#))
     );
     assert!(page.body.contains(r#"data-l="1""#));
-    assert!(page.body.contains("is-future"));
+    assert_eq!(
+        page.body.contains("is-future"),
+        days.iter().any(|d| d.future),
+        "future cells render only when the week has days left"
+    );
 }
 
 #[test]
@@ -762,4 +767,17 @@ fn heatmap_level_boundaries() {
     assert_eq!(score::heatmap_level(1, 5), 1);
     assert_eq!(score::heatmap_level(2, 5), 2);
     assert_eq!(score::heatmap_level(4, 5), 3);
+}
+
+async fn seed_tick(pool: &SqlitePool, routine_id: i64, date: NaiveDate) -> i64 {
+    let (user_id,): (i64,) = sqlx::query_as("SELECT user_id FROM routines WHERE id = ?")
+        .bind(routine_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    let routine = routinely::store::routine_for_user(pool, user_id, routine_id)
+        .await
+        .unwrap()
+        .unwrap();
+    return routinely::store::tick(pool, &routine, date, None).await.unwrap();
 }

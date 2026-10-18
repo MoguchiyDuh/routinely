@@ -1,0 +1,15 @@
+<section class="week-day{% if day.is_today %} is-today{% endif %}{% if day.is_past %} is-past{% endif %}" aria-label="{{ day.weekday_label }} {{ day.date }}">
+<header class="week-day-head">
+<a href="/day?date={{ day.date }}{{ who_q }}" class="week-day-link"><span class="week-day-name">{{ day.weekday_label }}</span><span class="week-day-num tnum">{{ day.day_num }}</span></a>
+{% if day.is_today %}<span class="pill pill-open">Today</span>{% endif %}
+</header>
+<div class="week-day-body">
+{% if day.is_empty %}
+<p class="week-empty">Nothing scheduled</p>
+{% else %}
+{% for a in day.agenda %}
+{% include "_week_entry.html" %}
+{% endfor %}
+{% endif %}
+</div>
+</section>

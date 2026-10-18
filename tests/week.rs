@@ -202,6 +202,10 @@ async fn backdate_start(server: &Server, routine_id: i64, date: NaiveDate) {
 }
 
 async fn tick(server: &Server, token: &str, routine_id: i64, date: NaiveDate) {
+    if date != routinely::store::user_today("UTC") {
+        seed_tick(&server.pool, routine_id, date).await;
+        return;
+    }
     let response = json_call(
         server,
         "PUT",
@@ -214,6 +218,10 @@ async fn tick(server: &Server, token: &str, routine_id: i64, date: NaiveDate) {
 }
 
 async fn untick(server: &Server, token: &str, routine_id: i64, date: NaiveDate) {
+    if date != routinely::store::user_today("UTC") {
+        routinely::store::untick(&server.pool, routine_id, date).await.unwrap();
+        return;
+    }
     let response = json_call(
         server,
         "DELETE",
@@ -415,7 +423,12 @@ async fn count_period_rows_open_and_closed() {
     )
     .await;
     backdate_start(&server, week_routine, week_start - Days::new(7)).await;
-    tick(&server, &token, week_routine, today).await;
+    let ticked_on = if today == week_start {
+        week_start + Days::new(1)
+    } else {
+        week_start
+    };
+    tick(&server, &token, week_routine, ticked_on).await;
     let daily_routine = create_routine(
         &server,
         &token,
@@ -450,7 +463,7 @@ async fn count_period_rows_open_and_closed() {
     assert_eq!(period_rows[0]["done"], 1);
     assert_eq!(period_rows[0]["required"], 3);
     assert_eq!(period_rows[0]["period_start"], week_start.to_string());
-    let anchored = entries_for_day(&week, week_start);
+    let anchored = entries_for_day(&week, today);
     assert!(find_entry(&anchored, "period", week_routine).is_some());
     let past_week = week_json(&server, &token, Some(closed_day)).await;
     let closed_entries = entries_for_day(&past_week, closed_day);
@@ -964,4 +977,60 @@ async fn unauth_week_requests_redirect_or_401() {
     let fragment = request(server.addr, "GET", "/occurrences/1/pin", &[], b"").await;
     assert_eq!(fragment.status, 303);
     assert_eq!(fragment.header("location").as_deref(), Some("/login"));
+}
+
+async fn seed_tick(pool: &SqlitePool, routine_id: i64, date: NaiveDate) -> i64 {
+    let (user_id,): (i64,) = sqlx::query_as("SELECT user_id FROM routines WHERE id = ?")
+        .bind(routine_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    let routine = routinely::store::routine_for_user(pool, user_id, routine_id)
+        .await
+        .unwrap()
+        .unwrap();
+    return routinely::store::tick(pool, &routine, date, None).await.unwrap();
+}
+
+#[tokio::test]
+async fn week_grid_offers_ticks_only_for_today_and_pins_goals() {
+    let server = setup("week-grid").await;
+    let token = signup_user(&server, "vic", "UTC").await;
+    let today = Utc::now().date_naive();
+    let week_start = today - Days::new(u64::from(today.weekday().num_days_from_monday()));
+    let daily = create_routine(
+        &server,
+        &token,
+        serde_json::json!({ "title": "floss", "kind": "weekdays", "weekdays": all_weekdays(), "time_of_day": "08:00" }),
+    )
+    .await;
+    backdate_start(&server, daily, week_start - Days::new(7)).await;
+    let goal = create_routine(
+        &server,
+        &token,
+        serde_json::json!({ "title": "lift", "kind": "count", "per_period": 3, "period": "week" }),
+    )
+    .await;
+    backdate_start(&server, goal, week_start - Days::new(7)).await;
+    tick(&server, &token, goal, today).await;
+    let page = get_page(&server, &format!("/week?date={today}"), &token).await;
+    assert_eq!(page.status, 200);
+    assert!(page.body.contains("wk-grid"), "desktop grid missing");
+    assert!(page.body.contains("goal-lane"), "goal lane missing");
+    assert!(page.body.contains(&format!("/occurrences/{goal}/untick?date={today}")));
+    for (index, _) in page.body.match_indices("/tick?date=") {
+        let date = &page.body[index + 11..index + 21];
+        assert_eq!(date, today.to_string(), "tick form offered for {date}");
+    }
+    for (index, _) in page.body.match_indices("/untick?date=") {
+        let date = &page.body[index + 13..index + 23];
+        assert_eq!(date, today.to_string(), "untick form offered for {date}");
+    }
+    assert!(page.body.contains(&format!("/occurrences/{daily}/tick?date={today}")));
+    assert!(
+        !page.body.contains("1/3 this week</span>"),
+        "weekly goals must not be repeated as day entries"
+    );
+    let past = get_page(&server, &format!("/week?date={}", week_start - Days::new(7)), &token).await;
+    assert!(!past.body.contains("/tick?date="), "past week must be read-only");
 }

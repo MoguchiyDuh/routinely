@@ -27,6 +27,7 @@
 <span class="hm-cell{% if cell.future %} is-future{% endif %}" data-l="{{ cell.level }}" title="{{ cell.label }}" aria-label="{{ cell.label }}"></span>
 {% endfor %}
 </div>
+<p class="hint heatmap-legend">Last 12 weeks, oldest first. Darker means more routines completed.</p>
 </section>
 <section class="card">
 <h2>Routines</h2>
@@ -37,13 +38,11 @@
 <a class="btn btn-primary" href="/routines/new">New routine</a>
 </div>
 {% else %}
-<ul class="routine-list">
+<ul class="profile-routines">
 {% for routine in routines %}
-<li class="routine-row">
-<div class="routine-info">
+<li>
 <span class="routine-title">{{ routine.title }}</span>
 <span class="sched">{{ routine.description }}</span>
-</div>
 </li>
 {% endfor %}
 </ul>

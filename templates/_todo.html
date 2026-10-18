@@ -1,7 +1,8 @@
+{% import "_macros.html" as ui %}
 <div id="todo-region" class="todo-region">
 {% if is_today && !overdue.is_empty() %}
-<section class="card overdue" aria-label="Overdue todos">
-<h2 class="section-title">Overdue</h2>
+<section class="card overdue" aria-label="Overdue">
+<h2 class="section-title danger">{{ ui::ico("circle-alert") }}Overdue</h2>
 <ul class="todo-list">
 {% for t in overdue %}
 {% include "_todo_item.html" %}
@@ -9,23 +10,80 @@
 </ul>
 </section>
 {% endif %}
-<aside class="side-panel">
-<section class="card" aria-label="Todos">
-<h2>Todos</h2>
-<form class="row-form" method="post" action="/todos?date={{ date }}" hx-post="/todos?date={{ date }}" hx-target="#todo-region" hx-swap="outerHTML">
-<input name="title" maxlength="200" required placeholder="Add a todo" aria-label="New todo title">
-<button type="submit" class="btn btn-primary"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#plus"/></svg>Add</button>
-<details class="todo-more">
-<summary><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#chevron-down"/></svg>Notes and deadline</summary>
-<div class="todo-more-body">
-<div class="field"><label for="todo-notes">Notes</label><textarea id="todo-notes" name="notes" rows="2"></textarea></div>
-<div class="field"><label for="todo-deadline">Deadline</label><input id="todo-deadline" type="datetime-local" name="deadline"></div>
+<section class="card deadlines" aria-label="Deadlines">
+<div class="card-header">
+<h2>{{ ui::ico("flag") }}Deadlines</h2>
 </div>
-</details>
+{% if deadlines.is_empty() %}
+{% if readonly %}<p class="hint">No deadlines.</p>{% else %}<p class="hint">Flights, appointments, submissions: one date in time you can't miss.</p>{% endif %}
+{% else %}
+<ul class="todo-list">
+{% for t in deadlines %}
+{% include "_todo_item.html" %}
+{% endfor %}
+</ul>
+{% endif %}
+{% if !readonly %}
+<details class="add-details">
+<summary class="btn btn-secondary">{{ ui::ico("plus") }}Add deadline</summary>
+<form class="todo-form" method="post" action="/todos?date={{ date }}" hx-post="/todos?date={{ date }}" hx-target="#todo-region" hx-swap="outerHTML">
+<input type="hidden" name="kind" value="deadline">
+<div class="field">
+<label for="dl-title">What</label>
+<input id="dl-title" name="title" maxlength="200" required autocomplete="off" placeholder="e.g. Flight to Berlin">
+</div>
+<div class="field-row">
+<div class="field">
+<label for="dl-date">Date</label>
+<input id="dl-date" type="date" name="date" required>
+</div>
+<div class="field">
+<label for="dl-time">Time <span class="hint-inline">optional, empty = all day</span></label>
+<input id="dl-time" type="time" name="time">
+</div>
+</div>
+<div class="field">
+<label for="dl-notes">Notes <span class="hint-inline">optional</span></label>
+<input id="dl-notes" name="notes" maxlength="500" autocomplete="off" placeholder="Where, booking reference, what to bring">
+</div>
+<div class="form-actions"><button type="submit" class="btn btn-primary">{{ ui::ico("plus") }}Add deadline</button></div>
 </form>
+</details>
+{% endif %}
+</section>
+<section class="card todos" aria-label="Todos">
+<h2>Todos</h2>
+{% if !readonly %}
+<form class="todo-form" method="post" action="/todos?date={{ date }}" hx-post="/todos?date={{ date }}" hx-target="#todo-region" hx-swap="outerHTML">
+<div class="input-row">
+<label class="visually-hidden" for="todo-title">New todo</label>
+<input id="todo-title" name="title" maxlength="200" required autocomplete="off" placeholder="Add a todo, e.g. Buy milk">
+<button type="submit" class="btn btn-primary">{{ ui::ico("plus") }}Add</button>
+</div>
+<div class="todo-extra">
+<div class="field-row">
+<div class="field">
+<div class="label-row">
+<label for="todo-date">Day</label>
+<button type="button" class="link-btn" data-clear="todo-date todo-time">No date</button>
+</div>
+<input id="todo-date" type="date" name="date" value="{{ date }}">
+</div>
+<div class="field">
+<label for="todo-time">Time <span class="hint-inline">optional</span></label>
+<input id="todo-time" type="time" name="time">
+</div>
+</div>
+<div class="field">
+<label for="todo-notes">Notes <span class="hint-inline">optional</span></label>
+<input id="todo-notes" name="notes" maxlength="500" autocomplete="off">
+</div>
+</div>
+</form>
+{% endif %}
 {% if todos.is_empty() %}
 <div class="empty">
-<svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#list-todo"/></svg>
+{{ ui::ico("list-todo") }}
 <p>No open todos.</p>
 </div>
 {% else %}
@@ -36,6 +94,4 @@
 </ul>
 {% endif %}
 </section>
-{% include "_note.html" %}
-</aside>
 </div>

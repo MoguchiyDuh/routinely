@@ -1,6 +1,4 @@
 use chrono::NaiveDate;
-use chrono::TimeDelta;
-use chrono::TimeZone;
 use chrono::Utc;
 use sqlx::SqlitePool;
 use sqlx::sqlite::SqliteConnection;
@@ -65,6 +63,8 @@ pub struct PunishmentDetail {
     pub cleared_at: Option<String>,
     pub missed_routine: Option<String>,
     pub missed_date: Option<String>,
+    pub missed_period: Option<String>,
+    pub period_start: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -102,6 +102,8 @@ type PunishDetailRecord = (
     String,
     String,
     String,
+    Option<String>,
+    Option<String>,
     Option<String>,
     Option<String>,
     Option<String>,
@@ -144,6 +146,8 @@ fn detail_from_row(row: PunishDetailRecord) -> PunishmentDetail {
         cleared_at: row.8,
         missed_routine: row.9,
         missed_date: row.10,
+        missed_period: row.11,
+        period_start: row.12,
     };
 }
 
@@ -364,12 +368,13 @@ pub async fn list_user_details(
     user_id: i64,
 ) -> Result<Vec<PunishmentDetail>, sqlx::Error> {
     let rows: Vec<PunishDetailRecord> = sqlx::query_as(
-        "SELECT p.id, p.user_id, u.username, COALESCE(c.title, p.custom_title), c.description, p.source, p.status, p.assigned_at, p.cleared_at, r.title, o.due_date \
+        "SELECT p.id, p.user_id, u.username, COALESCE(c.title, p.custom_title), c.description, p.source, p.status, p.assigned_at, p.cleared_at, COALESCE(r.title, pr.title), o.due_date, pr.period, p.period_start \
          FROM punishments p \
          JOIN users u ON u.id = p.user_id \
          LEFT JOIN punishment_catalog c ON c.id = p.catalog_id \
          LEFT JOIN occurrences o ON o.id = p.occurrence_id \
          LEFT JOIN routines r ON r.id = o.routine_id \
+         LEFT JOIN routines pr ON pr.id = p.routine_id \
          WHERE p.user_id = ? \
          ORDER BY p.assigned_at ASC, p.id ASC",
     )
@@ -381,12 +386,13 @@ pub async fn list_user_details(
 
 pub async fn list_pending_details(pool: &SqlitePool) -> Result<Vec<PunishmentDetail>, sqlx::Error> {
     let rows: Vec<PunishDetailRecord> = sqlx::query_as(
-        "SELECT p.id, p.user_id, u.username, COALESCE(c.title, p.custom_title), c.description, p.source, p.status, p.assigned_at, p.cleared_at, r.title, o.due_date \
+        "SELECT p.id, p.user_id, u.username, COALESCE(c.title, p.custom_title), c.description, p.source, p.status, p.assigned_at, p.cleared_at, COALESCE(r.title, pr.title), o.due_date, pr.period, p.period_start \
          FROM punishments p \
          JOIN users u ON u.id = p.user_id \
          LEFT JOIN punishment_catalog c ON c.id = p.catalog_id \
          LEFT JOIN occurrences o ON o.id = p.occurrence_id \
          LEFT JOIN routines r ON r.id = o.routine_id \
+         LEFT JOIN routines pr ON pr.id = p.routine_id \
          WHERE p.status = 'pending' \
          ORDER BY u.username COLLATE NOCASE ASC, p.assigned_at ASC, p.id ASC",
     )
@@ -412,9 +418,8 @@ pub async fn evaluate_user(
     let mut tx = pool.begin().await?;
     store::materialize(&mut tx, user.id, today).await?;
     let today_str = today.to_string();
-    let (cap_start, cap_end) = day_utc_bounds(today, &user.timezone);
-    let misses: Vec<(i64,)> = sqlx::query_as(
-        "SELECT o.id FROM occurrences o \
+    let misses: Vec<(i64, String)> = sqlx::query_as(
+        "SELECT o.id, o.due_date FROM occurrences o \
          JOIN routines r ON r.id = o.routine_id \
          LEFT JOIN completions c ON c.occurrence_id = o.id \
          WHERE r.user_id = ? AND r.archived_at IS NULL AND o.period_start IS NULL AND o.due_date < ? AND c.id IS NULL \
@@ -424,21 +429,22 @@ pub async fn evaluate_user(
     .bind(&today_str)
     .fetch_all(&mut *tx)
     .await?;
-    for (occurrence_id,) in misses {
-        let used = auto_assigned_count(&mut tx, user.id, &cap_start, &cap_end).await?;
+    for (occurrence_id, due_date) in misses {
+        let used = auto_assigned_count(&mut tx, user.id, &due_date).await?;
         let catalog_id = if used < i64::from(AUTO_CAP_PER_DAY) {
-            draw_active_catalog(&mut tx).await?
+            draw_active_catalog(&mut tx, user.id).await?
         } else {
             None
         };
         let inserted = sqlx::query(
-            "INSERT OR IGNORE INTO punishments (user_id, catalog_id, custom_title, source, status, occurrence_id, assigned_at, cleared_at) \
-             VALUES (?, ?, NULL, 'auto', 'pending', ?, ?, NULL)",
+            "INSERT OR IGNORE INTO punishments (user_id, catalog_id, custom_title, source, status, occurrence_id, assigned_at, cleared_at, miss_day) \
+             VALUES (?, ?, NULL, 'auto', 'pending', ?, ?, NULL, ?)",
         )
         .bind(user.id)
         .bind(catalog_id)
         .bind(occurrence_id)
         .bind(Utc::now().to_rfc3339())
+        .bind(&due_date)
         .execute(&mut *tx)
         .await?;
         if inserted.rows_affected() > 0 {
@@ -486,23 +492,28 @@ pub async fn evaluate_user(
                 continue;
             }
             stats.count_misses += 1;
-            let used = auto_assigned_count(&mut tx, user.id, &cap_start, &cap_end).await?;
-            if used >= i64::from(AUTO_CAP_PER_DAY) {
-                continue;
-            }
-            let Some(catalog_id) = draw_active_catalog(&mut tx).await? else {
-                continue;
+            let miss_day = period.period_end.to_string();
+            let used = auto_assigned_count(&mut tx, user.id, &miss_day).await?;
+            let catalog_id = if used < i64::from(AUTO_CAP_PER_DAY) {
+                draw_active_catalog(&mut tx, user.id).await?
+            } else {
+                None
             };
             sqlx::query(
-                "INSERT INTO punishments (user_id, catalog_id, custom_title, source, status, occurrence_id, assigned_at, cleared_at) \
-                 VALUES (?, ?, NULL, 'auto', 'pending', NULL, ?, NULL)",
+                "INSERT INTO punishments (user_id, catalog_id, custom_title, source, status, occurrence_id, assigned_at, cleared_at, miss_day, routine_id, period_start) \
+                 VALUES (?, ?, NULL, 'auto', 'pending', NULL, ?, NULL, ?, ?, ?)",
             )
             .bind(user.id)
             .bind(catalog_id)
             .bind(Utc::now().to_rfc3339())
+            .bind(&miss_day)
+            .bind(routine.id)
+            .bind(period.period_start.to_string())
             .execute(&mut *tx)
             .await?;
-            stats.draws += 1;
+            if catalog_id.is_some() {
+                stats.draws += 1;
+            }
         }
     }
     sqlx::query("UPDATE users SET last_evaluated_day = ? WHERE id = ?")
@@ -517,39 +528,33 @@ pub async fn evaluate_user(
 async fn auto_assigned_count(
     conn: &mut SqliteConnection,
     user_id: i64,
-    start: &str,
-    end: &str,
+    miss_day: &str,
 ) -> Result<i64, sqlx::Error> {
     let (count,): (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM punishments WHERE user_id = ? AND source = 'auto' AND assigned_at >= ? AND assigned_at < ?",
+        "SELECT COUNT(*) FROM punishments WHERE user_id = ? AND source = 'auto' AND miss_day = ? AND catalog_id IS NOT NULL",
     )
     .bind(user_id)
-    .bind(start)
-    .bind(end)
+    .bind(miss_day)
     .fetch_one(&mut *conn)
     .await?;
     return Ok(count);
 }
 
-async fn draw_active_catalog(conn: &mut SqliteConnection) -> Result<Option<i64>, sqlx::Error> {
+async fn draw_active_catalog(
+    conn: &mut SqliteConnection,
+    user_id: i64,
+) -> Result<Option<i64>, sqlx::Error> {
     let row: Option<(i64,)> = sqlx::query_as(
-        "SELECT id FROM punishment_catalog WHERE active = 1 ORDER BY (RANDOM()) LIMIT 1",
+        "SELECT c.id FROM punishment_catalog c \
+         LEFT JOIN (SELECT catalog_id, COUNT(*) AS n FROM punishments \
+                    WHERE user_id = ? AND status = 'pending' AND catalog_id IS NOT NULL \
+                    GROUP BY catalog_id) p ON p.catalog_id = c.id \
+         WHERE c.active = 1 \
+         ORDER BY COALESCE(p.n, 0), RANDOM() LIMIT 1",
     )
+    .bind(user_id)
     .fetch_optional(&mut *conn)
     .await?;
     return Ok(row.map(|(id,)| id));
 }
 
-fn day_utc_bounds(today: NaiveDate, timezone: &str) -> (String, String) {
-    let tz = store::user_timezone(timezone);
-    let Some(naive_start) = today.and_hms_opt(0, 0, 0) else {
-        let fallback = format!("{today}T00:00:00+00:00");
-        return (fallback.clone(), fallback);
-    };
-    let start = match tz.from_local_datetime(&naive_start).earliest() {
-        Some(aware) => aware.with_timezone(&Utc),
-        None => Utc.from_utc_datetime(&naive_start),
-    };
-    let end = start + TimeDelta::days(1);
-    return (start.to_rfc3339(), end.to_rfc3339());
-}

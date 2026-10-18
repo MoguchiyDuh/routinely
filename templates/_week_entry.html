@@ -1,18 +1,31 @@
 {% import "_macros.html" as ui %}
-<div class="agenda-entry status-{{ a.status }}{% if a.overdue %} is-overdue{% endif %}{% if a.done %} is-done{% endif %}">
-{% if a.time_label != "" %}
-<span class="agenda-time tnum">{{ a.time_label }}</span>
+<article class="entry kind-{{ a.kind }} status-{{ a.status }}{% if a.planned %} is-planned{% endif %}">
+{% if a.can_tick && a.routine_id.is_some() %}
+{% if let Some(rid) = a.routine_id %}
+{% if a.done %}
+<form class="tick-form" method="post" action="/occurrences/{{ rid }}/untick?date={{ day.date }}&back=week&wd={{ week_start }}&who={{ who_param }}"><button type="submit" class="tick-btn is-done" aria-label="Mark {{ a.title }} not done" title="Mark not done">{{ ui::ico("check") }}</button></form>
+{% else %}
+<form class="tick-form" method="post" action="/occurrences/{{ rid }}/tick?date={{ day.date }}&back=week&wd={{ week_start }}&who={{ who_param }}"><button type="submit" class="tick-btn" aria-label="Mark {{ a.title }} done" title="Mark done">{{ ui::ico("check") }}</button></form>
 {% endif %}
-{% if let Some(o) = a.owner %}
-<span class="user-dot" data-color="{{ o.color }}" title="{{ o.username }}"></span>
-<span class="owner-name">{{ o.username }}</span>
 {% endif %}
-<span class="entry-title">{{ a.title }}</span>
-{% if let Some(c) = a.count_label %}
-<span class="time tnum">{{ c }}</span>
+{% else if a.can_tick && a.todo_id.is_some() %}
+{% if let Some(tid) = a.todo_id %}
+<form class="tick-form" method="post" action="/todos/{{ tid }}/toggle?date={{ day.date }}&back=week&wd={{ week_start }}&who={{ who_param }}"><button type="submit" class="tick-btn{% if a.done %} is-done{% endif %}" aria-label="{% if a.done %}Mark {{ a.title }} not done{% else %}Mark {{ a.title }} done{% endif %}">{{ ui::ico("check") }}</button></form>
 {% endif %}
+{% else %}
+<span class="entry-mark" aria-hidden="true">{% if a.pill_icon == "" %}{{ ui::ico("repeat") }}{% else %}{{ ui::ico(a.pill_icon) }}{% endif %}</span>
+{% endif %}
+<div class="entry-main">
+<p class="entry-title"><a href="{{ a.href }}">{% if a.kind == "deadline" %}{{ ui::ico("flag") }}{% endif %}{% if a.is_goal %}{{ ui::ico("repeat") }}{% endif %}{{ a.title }}</a></p>
+<p class="entry-sub tnum">
+{% if a.kind == "todo" %}<span>Todo</span>{% else if a.kind == "deadline" %}<span class="tag-deadline">Deadline</span>{% endif %}
+{% if a.time_label != "" %}<span>{{ a.time_label }}</span>{% endif %}
+{% if let Some(c) = a.count_label %}<span>{{ c }}</span>{% endif %}
+{% if let Some(o) = a.owner %}<span class="owner"><span class="user-dot" data-color="{{ o.color }}"></span>{{ o.username }}</span>{% endif %}
+</p>
+</div>
 {% if a.has_pill %}
 {{ ui::status_pill(a.pill_class, a.pill_word, a.pill_icon) }}
 {% endif %}
-{{ ui::week_pin(a.has_pin, a.occurrence_id, "ag-") }}
-</div>
+{{ ui::week_pin(a.has_pin, a.occurrence_id, "w-") }}
+</article>

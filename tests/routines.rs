@@ -219,6 +219,10 @@ async fn update_routine(server: &Server, token: &str, id: i64, payload: Value) -
 }
 
 async fn tick(server: &Server, token: &str, routine_id: i64, date: Option<NaiveDate>) {
+    if let Some(day) = date.filter(|day| *day != routinely::store::user_today("UTC")) {
+        seed_tick(&server.pool, routine_id, day).await;
+        return;
+    }
     let path = match date {
         Some(day) => format!("/api/v1/occurrences/{routine_id}/completion?date={day}"),
         None => format!("/api/v1/occurrences/{routine_id}/completion"),
@@ -1182,4 +1186,103 @@ async fn empty_routines_page_shows_empty_state() {
         list.body.contains("/routines/new"),
         "empty state action missing"
     );
+}
+
+async fn seed_tick(pool: &SqlitePool, routine_id: i64, date: NaiveDate) -> i64 {
+    let (user_id,): (i64,) = sqlx::query_as("SELECT user_id FROM routines WHERE id = ?")
+        .bind(routine_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    let routine = routinely::store::routine_for_user(pool, user_id, routine_id)
+        .await
+        .unwrap()
+        .unwrap();
+    return routinely::store::tick(pool, &routine, date, None).await.unwrap();
+}
+
+#[tokio::test]
+async fn future_start_date_is_kept_and_validated() {
+    let server = setup("future-start").await;
+    let token = signup_user(&server, "ula").await;
+    let start = today_utc() + Days::new(7);
+    let id = create_routine(
+        &server,
+        &token,
+        serde_json::json!({
+            "title": "run",
+            "kind": "count",
+            "per_period": 2,
+            "period": "week",
+            "start_date": start.to_string(),
+        }),
+    )
+    .await;
+    let (stored,): (String,) = sqlx::query_as("SELECT start_date FROM routines WHERE id = ?")
+        .bind(id)
+        .fetch_one(&server.pool)
+        .await
+        .unwrap();
+    assert_eq!(stored, start.to_string());
+    let past = json_call(
+        &server,
+        "POST",
+        "/api/v1/routines",
+        &token,
+        serde_json::json!({
+            "title": "late", "kind": "weekdays", "weekdays": [0],
+            "start_date": (today_utc() - Days::new(1)).to_string(),
+        }),
+    )
+    .await;
+    assert_eq!(past.status, 422, "past start must be rejected: {past:?}");
+    let inverted = json_call(
+        &server,
+        "POST",
+        "/api/v1/routines",
+        &token,
+        serde_json::json!({
+            "title": "inverted", "kind": "weekdays", "weekdays": [0],
+            "start_date": start.to_string(),
+            "end_date": (start - Days::new(1)).to_string(),
+        }),
+    )
+    .await;
+    assert_eq!(inverted.status, 422, "end before start must be rejected");
+    let page = get_page(&server, "/routines", &token).await;
+    assert!(
+        page.body.contains(&format!("starts {}", start.format("%a %-d %b"))),
+        "routines list must show the future start: {}",
+        page.body
+    );
+    let form = get_page(&server, "/routines/new", &token).await;
+    assert!(form.body.contains(r#"name="start_date""#));
+    let edit = get_page(&server, &format!("/routines/{id}/edit"), &token).await;
+    assert!(!edit.body.contains(r#"name="start_date""#), "edit must not offer start date");
+    let renamed = update_routine(
+        &server,
+        &token,
+        id,
+        serde_json::json!({ "title": "run far", "kind": "count", "per_period": 2, "period": "week" }),
+    )
+    .await;
+    assert_eq!(renamed.status, 200, "rename failed: {renamed:?}");
+    let (after,): (String,) = sqlx::query_as("SELECT start_date FROM routines WHERE title = 'run far'")
+        .fetch_one(&server.pool)
+        .await
+        .unwrap();
+    assert_eq!(after, start.to_string(), "editing must keep the future start");
+    let ssr = form_post(
+        &server,
+        "/routines",
+        &token,
+        &format!("title=later&kind=weekdays&monday=on&duration=forever&start_date={start}"),
+    )
+    .await;
+    assert_eq!(ssr.status, 303, "ssr create failed: {ssr:?}");
+    let (ssr_start,): (String,) = sqlx::query_as("SELECT start_date FROM routines WHERE title = 'later'")
+        .fetch_one(&server.pool)
+        .await
+        .unwrap();
+    assert_eq!(ssr_start, start.to_string());
 }

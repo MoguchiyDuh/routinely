@@ -1,15 +1,24 @@
-<li class="todo{% if t.done %} done{% endif %}{% if t.overdue %} overdue{% endif %}">
+{% import "_macros.html" as ui %}
+<li class="todo{% if t.done %} done{% endif %}{% if t.overdue %} overdue{% endif %}{% if t.is_deadline %} is-deadline{% endif %}">
+{% if readonly %}
+<span class="tick-btn is-static{% if t.done %} is-done{% endif %}" aria-hidden="true">{{ ui::ico("check") }}</span>
+{% else %}
 <form class="todo-toggle" method="post" action="/todos/{{ t.id }}/toggle?date={{ date }}" hx-post="/todos/{{ t.id }}/toggle?date={{ date }}" hx-target="#todo-region" hx-swap="outerHTML">
-<button type="submit" class="tick-btn{% if t.done %} is-done{% endif %}" aria-label="{% if t.done %}Mark todo not done{% else %}Mark todo done{% endif %}"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#check"/></svg></button>
+<button type="submit" class="tick-btn{% if t.done %} is-done{% endif %}" aria-label="{% if t.done %}Mark {{ t.title }} not done{% else %}Mark {{ t.title }} done{% endif %}">{{ ui::ico("check") }}</button>
 </form>
-<div class="todo-body">
-<span class="todo-title">{{ t.title }}</span>
-{% if let Some(notes) = t.notes %}
-<p>{{ notes }}</p>
 {% endif %}
+<div class="todo-body">
+<span class="todo-title">{% if t.is_deadline %}{{ ui::ico("flag") }}{% endif %}{{ t.title }}</span>
 {% if let Some(deadline) = t.deadline %}
-<p class="tnum">{{ deadline }}</p>
+<span class="todo-due tnum">{{ ui::ico("clock") }}{{ deadline }}{% if t.is_deadline && !t.done %}{% if let Some(c) = t.countdown %}<span class="countdown">{{ c }}</span>{% endif %}{% endif %}</span>
+{% endif %}
+{% if let Some(notes) = t.notes %}
+<p class="todo-notes">{{ notes }}</p>
 {% endif %}
 </div>
-<button type="button" class="btn btn-ghost btn-sm todo-delete" aria-label="Delete todo" hx-delete="/todos/{{ t.id }}?date={{ date }}" hx-target="#todo-region" hx-swap="outerHTML"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#x"/></svg><span class="visually-hidden">Delete</span></button>
+{% if !readonly %}
+<form class="todo-delete-form" method="post" action="/todos/{{ t.id }}/delete?date={{ date }}">
+<button type="submit" class="btn btn-ghost btn-icon todo-delete" aria-label="Delete {{ t.title }}" title="Delete" hx-delete="/todos/{{ t.id }}?date={{ date }}" hx-target="#todo-region" hx-swap="outerHTML" hx-confirm="Delete this?">{{ ui::ico("trash-2") }}</button>
+</form>
+{% endif %}
 </li>

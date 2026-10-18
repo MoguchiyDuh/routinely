@@ -69,6 +69,7 @@ struct RoutineFormVm {
     err_period: Option<&'static str>,
     err_iterations: Option<&'static str>,
     err_end_date: Option<&'static str>,
+    err_start_date: Option<&'static str>,
     err_time_of_day: Option<&'static str>,
     err_time_end: Option<&'static str>,
     title: String,
@@ -92,6 +93,8 @@ struct RoutineFormVm {
     duration_end_date: bool,
     iterations: String,
     end_date: String,
+    show_start: bool,
+    start_date: String,
     time_of_day: String,
     time_end: String,
 }
@@ -110,6 +113,7 @@ impl RoutineFormVm {
             err_period: None,
             err_iterations: None,
             err_end_date: None,
+            err_start_date: None,
             err_time_of_day: None,
             err_time_end: None,
             title: String::new(),
@@ -133,6 +137,8 @@ impl RoutineFormVm {
             duration_end_date: false,
             iterations: String::new(),
             end_date: String::new(),
+            show_start: true,
+            start_date: String::new(),
             time_of_day: String::new(),
             time_end: String::new(),
         };
@@ -148,6 +154,7 @@ impl RoutineFormVm {
                 "period" => self.err_period = Some(error.ui_message),
                 "iterations" => self.err_iterations = Some(error.ui_message),
                 "end_date" => self.err_end_date = Some(error.ui_message),
+                "start_date" => self.err_start_date = Some(error.ui_message),
                 "time_of_day" => self.err_time_of_day = Some(error.ui_message),
                 "time_end" => self.err_time_end = Some(error.ui_message),
                 _ => {}
@@ -184,6 +191,7 @@ struct RoutineFormPayload {
     duration: Option<String>,
     iterations: Option<String>,
     end_date: Option<String>,
+    start_date: Option<String>,
     time_of_day: Option<String>,
     time_end: Option<String>,
 }
@@ -198,6 +206,7 @@ struct RoutineJsonPayload {
     period: Option<String>,
     iterations: Option<u32>,
     end_date: Option<NaiveDate>,
+    start_date: Option<NaiveDate>,
     time_of_day: Option<String>,
     time_end: Option<String>,
 }
@@ -371,6 +380,9 @@ async fn update_routine_ssr(
         Err(errors) => {
             let shell = Shell::load(&state, &auth, "routines", &headers).await?;
             let mut form = form_from_payload(&payload, format!("/routines/{routine_id}"));
+            form.submit_label = "Save changes";
+            form.cancel = true;
+            form.show_start = false;
             form.apply_errors(&errors);
             return Ok(html(&EditRoutinePage { shell, form })?);
         }
@@ -532,6 +544,7 @@ fn form_from_payload(payload: &RoutineFormPayload, action: String) -> RoutineFor
     }
     form.iterations = payload.iterations.clone().unwrap_or_default();
     form.end_date = payload.end_date.clone().unwrap_or_default();
+    form.start_date = payload.start_date.clone().unwrap_or_default();
     form.time_of_day = payload.time_of_day.clone().unwrap_or_default();
     form.time_end = payload.time_end.clone().unwrap_or_default();
     return form;
@@ -541,6 +554,7 @@ fn form_from_row(row: &store::RoutineRow, action: String) -> RoutineFormVm {
     let mut form = RoutineFormVm::empty(action);
     form.submit_label = "Save changes";
     form.cancel = true;
+    form.show_start = false;
     form.title = row.title.clone();
     form.notes = row.notes.clone().unwrap_or_default();
     match row.kind.as_str() {
@@ -687,6 +701,20 @@ fn form_spec(
         }
         _ => (None, None),
     };
+    let start_date = match payload.start_date.as_deref().map(str::trim) {
+        None | Some("") => None,
+        Some(raw) => match NaiveDate::parse_from_str(raw, "%Y-%m-%d") {
+            Ok(value) => Some(value),
+            Err(_) => {
+                errors.push(FieldError {
+                    field: "start_date",
+                    message: "start date must be YYYY-MM-DD",
+                    ui_message: "Pick a start date",
+                });
+                None
+            }
+        },
+    };
     let spec = build_spec(
         RawRoutine {
             title: payload.title.clone(),
@@ -697,6 +725,7 @@ fn form_spec(
             period,
             iterations,
             end_date,
+            start_date,
             time_of_day: payload.time_of_day.clone(),
             time_end: payload.time_end.clone(),
         },
@@ -739,6 +768,7 @@ fn json_raw(payload: &RoutineJsonPayload) -> Result<RawRoutine, WebError> {
         period,
         iterations: payload.iterations,
         end_date: payload.end_date,
+        start_date: payload.start_date,
         time_of_day: payload.time_of_day.clone(),
         time_end: payload.time_end.clone(),
     });
@@ -766,6 +796,7 @@ pub(crate) struct RawRoutine {
     pub period: Option<store::PeriodKind>,
     pub iterations: Option<u32>,
     pub end_date: Option<NaiveDate>,
+    pub start_date: Option<NaiveDate>,
     pub time_of_day: Option<String>,
     pub time_end: Option<String>,
 }
@@ -867,6 +898,14 @@ pub(crate) fn build_spec(
             None
         }
     };
+    let start_date = raw.start_date.unwrap_or(today);
+    if start_date < today {
+        errors.push(FieldError {
+            field: "start_date",
+            message: "start date cannot be before today",
+            ui_message: "Start date cannot be in the past",
+        });
+    }
     let (iterations, end_date) = match (raw.iterations, raw.end_date) {
         (Some(_), Some(_)) => {
             errors.push(FieldError {
@@ -891,6 +930,12 @@ pub(crate) fn build_spec(
                     field: "end_date",
                     message: "end date cannot be before today",
                     ui_message: "End date cannot be before today",
+                });
+            } else if value < start_date {
+                errors.push(FieldError {
+                    field: "end_date",
+                    message: "end date cannot be before start date",
+                    ui_message: "End date cannot be before the start date",
                 });
             }
             (None, Some(value))
@@ -935,7 +980,7 @@ pub(crate) fn build_spec(
         end_date,
         time_of_day: time_of_day.map(|(value, _)| value),
         time_end: time_end.map(|(value, _)| value),
-        start_date: today,
+        start_date: start_date.max(today),
     });
 }
 

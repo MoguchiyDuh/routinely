@@ -1,0 +1,18 @@
+{% import "_macros.html" as ui %}
+<div class="goal-lane status-{{ g.status }}">
+<a class="goal-lane-head" href="{{ g.href }}" title="{{ g.tooltip }}">{{ ui::ico("repeat") }}<span class="goal-lane-title">{{ g.title }}</span>{% if !g.pips.is_empty() %}<span class="bar-pips" aria-hidden="true">{% for done in g.pips %}<i class="pip{% if done %} is-done{% endif %}"></i>{% endfor %}</span>{% endif %}<span class="goal-lane-count tnum">{{ g.count_label }}</span>{% if g.status == "completed" %}<span class="goal-lane-met">Goal met</span>{% else if g.status == "missed" %}<span class="goal-lane-miss">Missed</span>{% endif %}</a>
+<ol class="goal-slots">
+{% for s in g.slots %}
+<li class="goal-slot is-{{ s.state }}">
+<span class="goal-slot-dow" aria-hidden="true">{{ s.letter }}</span>
+{% if s.can_tick %}
+<form class="tick-form" method="post" action="/occurrences/{{ g.routine_id }}/tick?date={{ s.date }}&back=week&wd={{ week_start }}&who={{ who_param }}"><button type="submit" class="tick-btn" aria-label="Mark {{ g.title }} done today" title="Done today">{{ ui::ico("check") }}</button></form>
+{% else if s.can_untick %}
+<form class="tick-form" method="post" action="/occurrences/{{ g.routine_id }}/untick?date={{ s.date }}&back=week&wd={{ week_start }}&who={{ who_param }}"><button type="submit" class="tick-btn is-done" aria-label="Mark {{ g.title }} not done today" title="Undo">{{ ui::ico("check") }}</button></form>
+{% else %}
+<span class="goal-mark" role="img" aria-label="{{ s.letter }}: {% if s.state == "done" %}done{% else if s.state == "open" %}still possible{% else if s.state == "off" %}outside goal{% else %}not done{% endif %}">{% if s.state == "done" %}{{ ui::ico("check") }}{% endif %}</span>
+{% endif %}
+</li>
+{% endfor %}
+</ol>
+</div>

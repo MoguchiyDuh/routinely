@@ -1,0 +1,21 @@
+{% import "_macros.html" as ui %}
+<div class="wk-ev kind-{{ a.kind }} status-{{ a.status }}{% if a.planned %} is-planned{% endif %}{% if a.end_min - a.start_min < 45 %} is-short{% endif %}"{% if !a.grid_style.is_empty() %} style="{{ a.grid_style }}"{% endif %}>
+{% if a.can_tick %}
+{% if let Some(rid) = a.routine_id %}
+<form class="tick-form" method="post" action="/occurrences/{{ rid }}/{% if a.done %}untick{% else %}tick{% endif %}?date={{ c.date }}&back=week&wd={{ week_start }}&who={{ who_param }}"><button type="submit" class="tick-btn is-sm{% if a.done %} is-done{% endif %}" aria-label="Mark {{ a.title }} {% if a.done %}not done{% else %}done{% endif %}" title="{% if a.done %}Mark not done{% else %}Mark done{% endif %}">{{ ui::ico("check") }}</button></form>
+{% endif %}
+{% if let Some(tid) = a.todo_id %}
+<form class="tick-form" method="post" action="/todos/{{ tid }}/toggle?date={{ c.date }}&back=week&wd={{ week_start }}&who={{ who_param }}"><button type="submit" class="tick-btn is-sm{% if a.done %} is-done{% endif %}" aria-label="Mark {{ a.title }} {% if a.done %}not done{% else %}done{% endif %}">{{ ui::ico("check") }}</button></form>
+{% endif %}
+{% else if a.status == "missed" || a.status == "completed" %}
+<span class="wk-ev-mark" aria-label="{{ a.pill_word }}">{{ ui::ico(a.pill_icon) }}</span>
+{% else %}
+<span class="visually-hidden">{{ a.pill_word }}</span>
+{% endif %}
+<div class="wk-ev-main">
+<a class="wk-ev-title" href="{{ a.href }}" title="{{ a.title }}{% if a.time_label != "" %} · {{ a.time_label }}{% endif %}">{% if a.kind == "deadline" %}{{ ui::ico("flag") }}{% endif %}{% if a.is_goal %}{{ ui::ico("repeat") }}{% endif %}{{ a.title }}</a>
+{% if a.time_label != "" %}<span class="wk-ev-time tnum">{{ a.time_label }}</span>{% endif %}
+{% if let Some(cnt) = a.count_label %}<span class="wk-ev-time tnum">{{ cnt }}</span>{% endif %}
+{% if let Some(o) = a.owner %}<span class="wk-ev-time owner"><span class="user-dot" data-color="{{ o.color }}"></span>{{ o.username }}</span>{% endif %}
+</div>
+</div>

@@ -8,6 +8,7 @@ use axum::response::Response;
 use axum::routing::get;
 use axum::routing::post;
 use chrono::DateTime;
+use chrono::Datelike;
 use chrono::NaiveDate;
 use chrono::Timelike;
 use chrono::Utc;
@@ -43,29 +44,34 @@ pub struct DayPage {
     has_routines: bool,
     rows: Vec<RowVm>,
     blocks: Vec<BlockVm>,
-    markers: Vec<MarkerVm>,
-    hours: Vec<String>,
-    now_min: i64,
+    now_label: String,
+    now_at_end: bool,
     overdue: Vec<TodoVm>,
     todos: Vec<TodoVm>,
+    deadlines: Vec<TodoVm>,
     body: Option<String>,
     saved: bool,
+    readonly: bool,
+    locked: bool,
+    picker: super::week::PickerVm,
+    who_q: String,
+    who_param: String,
 }
 
 #[derive(Template)]
 #[template(path = "_routine.html")]
 pub(crate) struct RoutinesSection {
     pub date: NaiveDate,
-    pub is_today: bool,
     pub progress_done: u32,
     pub progress_total: u32,
     pub progress_percent: u32,
     pub has_routines: bool,
     pub rows: Vec<RowVm>,
     pub blocks: Vec<BlockVm>,
-    pub markers: Vec<MarkerVm>,
-    pub hours: Vec<String>,
-    pub now_min: i64,
+    pub now_label: String,
+    pub now_at_end: bool,
+    pub readonly: bool,
+    pub locked: bool,
 }
 
 #[derive(Template)]
@@ -75,8 +81,8 @@ pub(crate) struct TodosSection {
     pub is_today: bool,
     pub overdue: Vec<TodoVm>,
     pub todos: Vec<TodoVm>,
-    pub body: Option<String>,
-    pub saved: bool,
+    pub deadlines: Vec<TodoVm>,
+    pub readonly: bool,
 }
 
 #[derive(Template)]
@@ -85,6 +91,7 @@ pub(crate) struct NoteSection {
     pub date: NaiveDate,
     pub body: Option<String>,
     pub saved: bool,
+    pub readonly: bool,
 }
 
 pub(crate) struct OnboardingVm {
@@ -110,7 +117,21 @@ pub(crate) struct RowVm {
     pub period_done: Option<u32>,
     pub period_required: Option<u32>,
     pub period_name: Option<&'static str>,
+    pub done_days: String,
     pub pin: Option<PinVm>,
+}
+
+pub(crate) fn done_days_label(dates: &[NaiveDate], period: crate::recurrence::PeriodKind) -> String {
+    let format = match period {
+        crate::recurrence::PeriodKind::Day => return String::new(),
+        crate::recurrence::PeriodKind::Week => "%a",
+        crate::recurrence::PeriodKind::Month | crate::recurrence::PeriodKind::Year => "%-d %b",
+    };
+    return dates
+        .iter()
+        .map(|date| date.format(format).to_string())
+        .collect::<Vec<_>>()
+        .join(" \u{b7} ");
 }
 
 pub(crate) struct BlockVm {
@@ -122,19 +143,12 @@ pub(crate) struct BlockVm {
     pub pill_icon: &'static str,
     pub occurrence_id: Option<i64>,
     pub start_min: i64,
-    pub len_min: i64,
     pub col: u32,
     pub cols: u32,
     pub time_label: String,
+    pub start_label: String,
+    pub now_before: bool,
     pub pin: Option<PinVm>,
-}
-
-pub(crate) struct MarkerVm {
-    pub title: String,
-    pub time_label: String,
-    pub start_min: i64,
-    pub done: bool,
-    pub overdue: bool,
 }
 
 pub(crate) struct PinVm {
@@ -148,8 +162,16 @@ pub(crate) struct TodoVm {
     pub title: String,
     pub notes: Option<String>,
     pub deadline: Option<String>,
+    pub is_deadline: bool,
+    pub countdown: Option<String>,
     pub done: bool,
     pub overdue: bool,
+}
+
+pub(crate) struct TodoLists {
+    pub overdue: Vec<TodoVm>,
+    pub todos: Vec<TodoVm>,
+    pub deadlines: Vec<TodoVm>,
 }
 
 struct RoutineData {
@@ -158,6 +180,7 @@ struct RoutineData {
     has_routines: bool,
     rows: Vec<RowVm>,
     blocks: Vec<BlockVm>,
+    now_at_end: bool,
 }
 
 struct PendingBlock {
@@ -169,6 +192,7 @@ struct PendingBlock {
 #[derive(Debug, Deserialize)]
 pub struct DayQuery {
     pub date: Option<String>,
+    pub who: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -200,6 +224,8 @@ struct TodoJson {
     deadline: Option<String>,
     completed_at: Option<String>,
     overdue: bool,
+    kind: String,
+    all_day: bool,
 }
 
 pub fn router() -> Router<AppState> {
@@ -229,18 +255,36 @@ async fn day_view(
 ) -> WebResult {
     let today = store::user_today(&auth.timezone);
     let date = parse_date_param(query.date.as_deref(), today)?;
+    let members = store::list_members(&state.pool).await?;
+    let target = match query.who.as_deref().map(str::trim) {
+        None | Some("") | Some("me") => auth.id,
+        Some(raw) => match raw.parse::<i64>() {
+            Ok(id) if members.iter().any(|member| member.id == id) => id,
+            _ => return Err(WebError::NotFound),
+        },
+    };
+    let readonly = target != auth.id;
     let mut conn = state.pool.acquire().await?;
-    store::materialize(&mut conn, auth.id, today).await?;
+    store::materialize(&mut conn, target, today).await?;
     drop(conn);
-    let shell = Shell::load(&state, &auth, "today", &headers).await?;
-    let data = build_routine_data(&state.pool, auth.id, date, today).await?;
-    let markers = build_markers(&state.pool, auth.id, &auth.timezone, date).await?;
-    let (overdue, todos) = build_todo_lists(&state.pool, auth.id, &auth.timezone).await?;
-    let body = store::get_note(&state.pool, auth.id, date).await?;
-    let onboarding = build_onboarding(&state.pool, auth.id).await?;
+    let shell = Shell::load(&state, &auth, "calendar", &headers).await?;
+    let now_min = local_now_minutes(&auth.timezone);
+    let data = build_routine_data(&state.pool, target, date, today, now_min).await?;
+    let lists = build_todo_lists(&state.pool, target, &auth.timezone).await?;
+    let body = store::get_note(&state.pool, target, date).await?;
+    let onboarding = if readonly {
+        None
+    } else {
+        build_onboarding(&state.pool, auth.id).await?
+    };
+    let picker = super::week::build_picker("/day", auth.id, Some(target), date, &members);
+    let (who_q, who_param) = if readonly {
+        (format!("&who={target}"), target.to_string())
+    } else {
+        (String::new(), "me".to_string())
+    };
     let progress_total = data.progress_total;
     let progress_percent = progress_percent(data.progress_done, progress_total);
-    let now_min = local_now_minutes(&auth.timezone);
     let page = DayPage {
         shell,
         date,
@@ -256,13 +300,18 @@ async fn day_view(
         has_routines: data.has_routines,
         rows: data.rows,
         blocks: data.blocks,
-        markers,
-        hours: hour_labels(),
-        now_min,
-        overdue,
-        todos,
+        now_label: fmt_minutes(now_min),
+        now_at_end: data.now_at_end,
+        overdue: lists.overdue,
+        todos: lists.todos,
+        deadlines: lists.deadlines,
         body,
         saved: false,
+        readonly,
+        locked: date != today,
+        picker,
+        who_q,
+        who_param,
     };
     return Ok(html(&page)?);
 }
@@ -324,6 +373,8 @@ async fn api_day(
             deadline: t.deadline.clone(),
             completed_at: t.completed_at.clone(),
             overdue: is_overdue(t, &now),
+            kind: t.kind.clone(),
+            all_day: t.all_day,
         })
         .collect();
     let note = store::get_note(&state.pool, auth.id, date).await?;
@@ -340,6 +391,7 @@ async fn build_routine_data(
     user_id: i64,
     date: NaiveDate,
     today: NaiveDate,
+    now_min: i64,
 ) -> Result<RoutineData, WebError> {
     let infos = store::day_routines(pool, user_id, date, today).await?;
     let has_routines = store::has_any_routine(pool, user_id).await?;
@@ -353,7 +405,7 @@ async fn build_routine_data(
             (Some(done), Some(required)) => done >= required,
             _ => false,
         };
-        if if is_count { quota_met } else { info.completed } {
+        if info.completed || (is_count && quota_met) {
             progress_done += 1;
         }
         progress_total += 1;
@@ -380,7 +432,6 @@ async fn build_routine_data(
                         pill_icon,
                         occurrence_id: info.occurrence_id,
                         start_min,
-                        len_min,
                         col: 1,
                         cols: 1,
                         time_label: format!(
@@ -388,6 +439,8 @@ async fn build_routine_data(
                             fmt_minutes(start_min),
                             fmt_minutes(start_min + len_min)
                         ),
+                        start_label: fmt_minutes(start_min),
+                        now_before: false,
                         pin,
                     },
                     start: start_min,
@@ -400,6 +453,16 @@ async fn build_routine_data(
                 } else {
                     None
                 };
+                let done_days = match (is_count, info.routine.period) {
+                    (true, Some(period)) => match crate::recurrence::period_bounds(date, period) {
+                        Some((start, _)) => done_days_label(
+                            &store::period_done_dates(pool, info.routine.id, start).await?,
+                            period,
+                        ),
+                        None => String::new(),
+                    },
+                    _ => String::new(),
+                };
                 rows.push(RowVm {
                     id: info.routine.id,
                     title: info.routine.title.clone(),
@@ -411,6 +474,7 @@ async fn build_routine_data(
                     period_done: info.period_done,
                     period_required: info.period_required,
                     period_name,
+                    done_days,
                     pin,
                 });
             }
@@ -426,12 +490,20 @@ async fn build_routine_data(
         block.cols = cols;
         blocks.push(block);
     }
+    let mut now_at_end = false;
+    if date == today && !blocks.is_empty() {
+        match blocks.iter_mut().find(|b| b.start_min > now_min) {
+            Some(block) => block.now_before = true,
+            None => now_at_end = true,
+        }
+    }
     return Ok(RoutineData {
         progress_done,
         progress_total,
         has_routines,
         rows,
         blocks,
+        now_at_end,
     });
 }
 
@@ -484,21 +556,21 @@ pub(crate) async fn build_routines_section(
     date: NaiveDate,
     today: NaiveDate,
 ) -> Result<RoutinesSection, WebError> {
-    let data = build_routine_data(pool, user_id, date, today).await?;
-    let markers = build_markers(pool, user_id, timezone, date).await?;
+    let now_min = local_now_minutes(timezone);
+    let data = build_routine_data(pool, user_id, date, today, now_min).await?;
     let progress_percent = progress_percent(data.progress_done, data.progress_total);
     return Ok(RoutinesSection {
         date,
-        is_today: date == today,
         progress_done: data.progress_done,
         progress_total: data.progress_total,
         progress_percent,
         has_routines: data.has_routines,
         rows: data.rows,
         blocks: data.blocks,
-        markers,
-        hours: hour_labels(),
-        now_min: local_now_minutes(timezone),
+        now_label: fmt_minutes(now_min),
+        now_at_end: data.now_at_end,
+        readonly: false,
+        locked: date != today,
     });
 }
 
@@ -509,15 +581,14 @@ pub(crate) async fn build_todos_section(
     date: NaiveDate,
     today: NaiveDate,
 ) -> Result<TodosSection, WebError> {
-    let (overdue, todos) = build_todo_lists(pool, user_id, timezone).await?;
-    let body = store::get_note(pool, user_id, date).await?;
+    let lists = build_todo_lists(pool, user_id, timezone).await?;
     return Ok(TodosSection {
         date,
         is_today: date == today,
-        overdue,
-        todos,
-        body,
-        saved: false,
+        overdue: lists.overdue,
+        todos: lists.todos,
+        deadlines: lists.deadlines,
+        readonly: false,
     });
 }
 
@@ -525,61 +596,50 @@ async fn build_todo_lists(
     pool: &SqlitePool,
     user_id: i64,
     timezone: &str,
-) -> Result<(Vec<TodoVm>, Vec<TodoVm>), WebError> {
+) -> Result<TodoLists, WebError> {
     let now = Utc::now().to_rfc3339();
+    let keep_done_after = (Utc::now() - chrono::Duration::hours(24)).to_rfc3339();
     let tz = store::user_timezone(timezone);
+    let local_today = Utc::now().with_timezone(&tz).date_naive();
     let todo_rows = store::list_todos(pool, user_id, &now).await?;
     let mut overdue = Vec::new();
-    let mut undated = Vec::new();
+    let mut todos = Vec::new();
+    let mut deadlines = Vec::new();
     for t in &todo_rows {
+        if let Some(done_at) = &t.completed_at
+            && done_at.as_str() < keep_done_after.as_str()
+        {
+            continue;
+        }
         let vm = TodoVm {
             id: t.id,
             title: t.title.clone(),
             notes: t.notes.clone(),
-            deadline: t.deadline.as_deref().map(|raw| fmt_deadline(raw, &tz)),
+            deadline: t
+                .deadline
+                .as_deref()
+                .map(|raw| fmt_deadline(raw, &tz, local_today, t.all_day)),
+            is_deadline: t.kind == "deadline",
+            countdown: t
+                .deadline
+                .as_deref()
+                .and_then(|raw| fmt_countdown(raw, &tz, local_today)),
             done: t.completed_at.is_some(),
             overdue: is_overdue(t, &now),
         };
         if vm.overdue {
             overdue.push(vm);
-        } else if t.deadline.is_none() {
-            undated.push(vm);
+        } else if vm.is_deadline {
+            deadlines.push(vm);
+        } else {
+            todos.push(vm);
         }
     }
-    return Ok((overdue, undated));
-}
-
-async fn build_markers(
-    pool: &SqlitePool,
-    user_id: i64,
-    timezone: &str,
-    date: NaiveDate,
-) -> Result<Vec<MarkerVm>, WebError> {
-    let now = Utc::now().to_rfc3339();
-    let tz = store::user_timezone(timezone);
-    let todo_rows = store::list_todos(pool, user_id, &now).await?;
-    let mut markers = Vec::new();
-    for t in &todo_rows {
-        let Some(deadline) = t.deadline.as_deref() else {
-            continue;
-        };
-        let Ok(parsed) = DateTime::parse_from_rfc3339(deadline) else {
-            continue;
-        };
-        let local = parsed.with_timezone(&tz);
-        if local.date_naive() != date {
-            continue;
-        }
-        markers.push(MarkerVm {
-            title: t.title.clone(),
-            time_label: local.format("%H:%M").to_string(),
-            start_min: i64::from(local.hour()) * 60 + i64::from(local.minute()),
-            done: t.completed_at.is_some(),
-            overdue: is_overdue(t, &now),
-        });
-    }
-    markers.sort_by_key(|m| m.start_min);
-    return Ok(markers);
+    return Ok(TodoLists {
+        overdue,
+        todos,
+        deadlines,
+    });
 }
 
 async fn build_onboarding(
@@ -709,11 +769,41 @@ fn fmt_minutes(minutes: i64) -> String {
     return format!("{:02}:{:02}", normalized / 60, normalized % 60);
 }
 
-fn fmt_deadline(raw: &str, tz: &chrono_tz::Tz) -> String {
+fn fmt_deadline(raw: &str, tz: &chrono_tz::Tz, today: NaiveDate, all_day: bool) -> String {
     return match DateTime::parse_from_rfc3339(raw) {
-        Ok(parsed) => parsed.with_timezone(tz).format("%d %b %H:%M").to_string(),
+        Ok(parsed) => {
+            let local = parsed.with_timezone(tz);
+            let day = local.date_naive();
+            let word = if day == today {
+                "Today".to_string()
+            } else if Some(day) == today.succ_opt() {
+                "Tomorrow".to_string()
+            } else if Some(day) == today.pred_opt() {
+                "Yesterday".to_string()
+            } else if day.year() == today.year() {
+                local.format("%a %-d %b").to_string()
+            } else {
+                local.format("%a %-d %b %Y").to_string()
+            };
+            if all_day {
+                return word;
+            }
+            return format!("{word} {}", local.format("%H:%M"));
+        }
         Err(_) => raw.to_string(),
     };
+}
+
+fn fmt_countdown(raw: &str, tz: &chrono_tz::Tz, today: NaiveDate) -> Option<String> {
+    let parsed = DateTime::parse_from_rfc3339(raw).ok()?;
+    let days = (parsed.with_timezone(tz).date_naive() - today).num_days();
+    return Some(match days {
+        0 => "today".to_string(),
+        1 => "tomorrow".to_string(),
+        -1 => "yesterday".to_string(),
+        d if d > 1 => format!("in {d} days"),
+        d => format!("{} days ago", -d),
+    });
 }
 
 fn progress_percent(done: u32, total: u32) -> u32 {
@@ -721,10 +811,6 @@ fn progress_percent(done: u32, total: u32) -> u32 {
         return 0;
     }
     return done * 100 / total;
-}
-
-pub(crate) fn hour_labels() -> Vec<String> {
-    return (0..24).map(|hour| format!("{hour:02}:00")).collect();
 }
 
 pub(crate) fn local_now_minutes(timezone: &str) -> i64 {
