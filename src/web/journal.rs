@@ -36,6 +36,12 @@ struct JournalQuery {
     to: Option<String>,
     q: Option<String>,
     who: Option<String>,
+    routine: Option<String>,
+}
+
+struct RoutineOption {
+    title: String,
+    selected: bool,
 }
 
 #[derive(Template)]
@@ -55,6 +61,9 @@ struct JournalPage {
     readonly: bool,
     who_q: String,
     who_value: String,
+    routine_options: Vec<RoutineOption>,
+    routine_value: String,
+    keep_q: String,
 }
 
 struct RangeChip {
@@ -156,8 +165,44 @@ async fn journal_view(
     };
     let readonly = target != auth.id;
     let shell = Shell::load(&state, &auth, "journal", &headers).await?;
+    let routine_value: String = query
+        .routine
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or_default()
+        .chars()
+        .take(MAX_QUERY_CHARS)
+        .collect();
+    let routine_filter = Some(routine_value.as_str()).filter(|value| !value.is_empty());
     let notes = store::journal_notes(&state.pool, target, from, to, pattern.as_deref()).await?;
-    let pins = store::journal_pins(&state.pool, target, from, to, pattern.as_deref()).await?;
+    let pins = store::journal_pins(
+        &state.pool,
+        target,
+        from,
+        to,
+        pattern.as_deref(),
+        routine_filter,
+    )
+    .await?;
+    let routine_key = routine_value.to_lowercase();
+    let mut routine_options: Vec<RoutineOption> =
+        store::journal_routine_titles(&state.pool, target)
+            .await?
+            .into_iter()
+            .map(|title| RoutineOption {
+                selected: title.to_lowercase() == routine_key,
+                title,
+            })
+            .collect();
+    if routine_filter.is_some() && !routine_options.iter().any(|option| option.selected) {
+        routine_options.insert(
+            0,
+            RoutineOption {
+                title: routine_value.clone(),
+                selected: true,
+            },
+        );
+    }
     let occurrence_ids: Vec<i64> = pins.iter().map(|pin| pin.1).collect();
     let attachments: HashMap<i64, store::PinRow> =
         store::pins_for_occurrences(&state.pool, &occurrence_ids)
@@ -202,6 +247,10 @@ async fn journal_view(
                 photos,
             });
     }
+    if routine_filter.is_some() {
+        by_day.retain(|_, day| !day.proofs.is_empty());
+        note_count = by_day.values().filter(|day| day.note.is_some()).count();
+    }
     let days: Vec<JournalDayVm> = by_day.into_values().rev().collect();
     let ranges = RANGES
         .iter()
@@ -233,6 +282,9 @@ async fn journal_view(
             if !q.is_empty() {
                 pairs.push(("q", q.clone()));
             }
+            if !routine_value.is_empty() {
+                pairs.push(("routine", routine_value.clone()));
+            }
             if let Some(id) = who.filter(|id| *id != auth.id) {
                 pairs.push(("who", id.to_string()));
             }
@@ -243,6 +295,14 @@ async fn journal_view(
         format!("&who={target}")
     } else {
         String::new()
+    };
+    let keep_q = if routine_value.is_empty() {
+        who_q.clone()
+    } else {
+        format!(
+            "{who_q}&{}",
+            serde_urlencoded::to_string([("routine", routine_value.as_str())]).unwrap_or_default()
+        )
     };
     let page = JournalPage {
         shell,
@@ -259,6 +319,9 @@ async fn journal_view(
         readonly,
         who_q,
         who_value: target.to_string(),
+        routine_options,
+        routine_value,
+        keep_q,
     };
     return Ok(html(&page)?);
 }

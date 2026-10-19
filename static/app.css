@@ -2834,9 +2834,18 @@ a.chip:focus-visible {
 }
 
 .journal-proof-title {
-  color: var(--text-2);
-  font-size: var(--text-sm);
-  font-weight: 600;
+  color: var(--text);
+  font-size: var(--text-md, 1rem);
+  font-weight: 700;
+}
+
+.journal-routine {
+  margin: 0;
+}
+
+.journal-routine select {
+  width: 100%;
+  min-height: 44px;
 }
 
 .journal-links {

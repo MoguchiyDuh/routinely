@@ -223,9 +223,13 @@ pub fn router() -> Router<AppState> {
         .route("/routines/{id}/edit", get(edit_routine_page))
         .route("/routines/{id}", post(update_routine_ssr))
         .route("/routines/{id}/archive", post(archive_ssr))
+        .route("/routines/{id}/restore", post(restore_ssr))
+        .route("/routines/{id}/delete", post(delete_ssr))
         .route("/api/v1/routines", post(api_create_routine))
         .route("/api/v1/routines/{id}", put(api_update_routine))
-        .route("/api/v1/routines/{id}/archive", post(api_archive));
+        .route("/api/v1/routines/{id}/archive", post(api_archive))
+        .route("/api/v1/routines/{id}/restore", post(api_restore))
+        .route("/api/v1/routines/{id}/delete", post(api_delete));
 }
 
 async fn routines_page(
@@ -405,6 +409,40 @@ async fn archive_ssr(
     ));
 }
 
+async fn restore_ssr(
+    PageAuth(auth): PageAuth,
+    State(state): State<AppState>,
+    Path(routine_id): Path<i64>,
+) -> WebResult {
+    let restored = store::restore_routine(&state.pool, auth.id, routine_id).await?;
+    if !restored {
+        return Err(WebError::NotFound);
+    }
+    return Ok(super::shell::redirect_with_flash(
+        "/routines",
+        "Routine restored",
+        state.config.cookie_secure,
+    ));
+}
+
+async fn delete_ssr(
+    PageAuth(auth): PageAuth,
+    State(state): State<AppState>,
+    Path(routine_id): Path<i64>,
+) -> WebResult {
+    match store::delete_archived_routine(&state.pool, auth.id, routine_id).await? {
+        store::DeleteRoutineOutcome::Deleted => {
+            return Ok(super::shell::redirect_with_flash(
+                "/routines",
+                "Routine deleted",
+                state.config.cookie_secure,
+            ));
+        }
+        store::DeleteRoutineOutcome::NotFound => return Err(WebError::NotFound),
+        store::DeleteRoutineOutcome::NotArchived => return Err(WebError::Conflict),
+    }
+}
+
 async fn api_create_routine(
     ApiAuth(auth): ApiAuth,
     State(state): State<AppState>,
@@ -457,6 +495,40 @@ async fn api_archive(
         axum::Json(serde_json::json!({ "ok": true })),
     )
         .into_response());
+}
+
+async fn api_restore(
+    ApiAuth(auth): ApiAuth,
+    State(state): State<AppState>,
+    Path(routine_id): Path<i64>,
+) -> Result<axum::response::Response, WebError> {
+    let restored = store::restore_routine(&state.pool, auth.id, routine_id).await?;
+    if !restored {
+        return Err(WebError::NotFound);
+    }
+    return Ok((
+        axum::http::StatusCode::OK,
+        axum::Json(serde_json::json!({ "ok": true })),
+    )
+        .into_response());
+}
+
+async fn api_delete(
+    ApiAuth(auth): ApiAuth,
+    State(state): State<AppState>,
+    Path(routine_id): Path<i64>,
+) -> Result<axum::response::Response, WebError> {
+    match store::delete_archived_routine(&state.pool, auth.id, routine_id).await? {
+        store::DeleteRoutineOutcome::Deleted => {
+            return Ok((
+                axum::http::StatusCode::OK,
+                axum::Json(serde_json::json!({ "ok": true })),
+            )
+                .into_response());
+        }
+        store::DeleteRoutineOutcome::NotFound => return Err(WebError::NotFound),
+        store::DeleteRoutineOutcome::NotArchived => return Err(WebError::Conflict),
+    }
 }
 
 fn weekday_flags(mask: u8) -> (bool, bool, bool, bool, bool, bool, bool) {

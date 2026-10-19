@@ -622,6 +622,96 @@ pub async fn archive_routine(
     return Ok(result.rows_affected() > 0);
 }
 
+pub async fn restore_routine(
+    pool: &SqlitePool,
+    user_id: i64,
+    routine_id: i64,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE routines SET archived_at = NULL WHERE id = $1 AND user_id = $2 AND archived_at IS NOT NULL",
+    )
+    .bind(routine_id)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+    return Ok(result.rows_affected() > 0);
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum DeleteRoutineOutcome {
+    Deleted,
+    NotFound,
+    NotArchived,
+}
+
+pub async fn delete_archived_routine(
+    pool: &SqlitePool,
+    user_id: i64,
+    routine_id: i64,
+) -> Result<DeleteRoutineOutcome, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let archived: Option<(Option<String>,)> =
+        sqlx::query_as("SELECT archived_at FROM routines WHERE id = $1 AND user_id = $2")
+            .bind(routine_id)
+            .bind(user_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    let Some((archived_at,)) = archived else {
+        return Ok(DeleteRoutineOutcome::NotFound);
+    };
+    if archived_at.is_none() {
+        return Ok(DeleteRoutineOutcome::NotArchived);
+    }
+    let chain: Vec<(i64,)> = sqlx::query_as(
+        "WITH RECURSIVE up(id) AS ( \
+             SELECT id FROM routines WHERE id = $1 AND user_id = $2 \
+             UNION SELECT r.previous_id FROM routines r JOIN up ON r.id = up.id WHERE r.previous_id IS NOT NULL \
+         ), down(id) AS ( \
+             SELECT id FROM routines WHERE id = $1 AND user_id = $2 \
+             UNION SELECT r.id FROM routines r JOIN down ON r.previous_id = down.id \
+         ) \
+         SELECT id FROM up UNION SELECT id FROM down",
+    )
+    .bind(routine_id)
+    .bind(user_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let ids: Vec<i64> = chain.into_iter().map(|(id,)| id).collect();
+    let mut files: Vec<String> = Vec::new();
+    for id in &ids {
+        let rows: Vec<(String,)> = sqlx::query_as(
+            "SELECT a.file_path FROM attachments a \
+             JOIN pins p ON p.id = a.pin_id \
+             JOIN completions c ON c.id = p.completion_id \
+             JOIN occurrences o ON o.id = c.occurrence_id \
+             WHERE o.routine_id = $1 AND a.file_path IS NOT NULL",
+        )
+        .bind(id)
+        .fetch_all(&mut *tx)
+        .await?;
+        files.extend(rows.into_iter().map(|(path,)| path));
+    }
+    for id in &ids {
+        sqlx::query("UPDATE routines SET previous_id = NULL WHERE id = $1 AND user_id = $2")
+            .bind(id)
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+    for id in &ids {
+        sqlx::query("DELETE FROM routines WHERE id = $1 AND user_id = $2")
+            .bind(id)
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+    tx.commit().await?;
+    for file in files {
+        let _ = tokio::fs::remove_file(std::path::Path::new(UPLOADS_DIR).join(file)).await;
+    }
+    return Ok(DeleteRoutineOutcome::Deleted);
+}
+
 #[derive(Debug)]
 pub enum UpdateRoutineError {
     NotFound,
@@ -1388,8 +1478,8 @@ pub async fn journal_notes(
     let rows: Vec<(String, String)> = sqlx::query_as(
         "SELECT day, body FROM daily_notes \
          WHERE user_id = $1 AND TRIM(body) != '' \
-         AND ($2::text IS NULL OR day >= $2) AND ($3::text IS NULL OR day <= $3) \
-         AND ($4::text IS NULL OR body ILIKE $4 ESCAPE '\\') \
+         AND ($2 IS NULL OR day >= $2) AND ($3 IS NULL OR day <= $3) \
+         AND ($4 IS NULL OR body LIKE $4 ESCAPE '\\') \
          ORDER BY day DESC LIMIT $5",
     )
     .bind(user_id)
@@ -1408,6 +1498,7 @@ pub async fn journal_pins(
     from: Option<NaiveDate>,
     to: Option<NaiveDate>,
     pattern: Option<&str>,
+    routine: Option<&str>,
 ) -> Result<Vec<JournalPinRecord>, sqlx::Error> {
     let from = from.map(|day| day.to_string());
     let to = to.map(|day| day.to_string());
@@ -1418,16 +1509,33 @@ pub async fn journal_pins(
          JOIN occurrences o ON o.id = c.occurrence_id \
          JOIN routines r ON r.id = o.routine_id \
          WHERE r.user_id = $1 \
-         AND ($2::text IS NULL OR o.due_date >= $2) AND ($3::text IS NULL OR o.due_date <= $3) \
-         AND ($4::text IS NULL OR p.summary ILIKE $4 ESCAPE '\\' OR r.title ILIKE $4 ESCAPE '\\') \
-         ORDER BY o.due_date DESC, o.id DESC LIMIT $5",
+         AND ($2 IS NULL OR o.due_date >= $2) AND ($3 IS NULL OR o.due_date <= $3) \
+         AND ($4 IS NULL OR p.summary LIKE $4 ESCAPE '\\' OR r.title LIKE $4 ESCAPE '\\') \
+         AND ($5 IS NULL OR LOWER(TRIM(r.title)) = LOWER(TRIM($5))) \
+         ORDER BY o.due_date DESC, o.id DESC LIMIT $6",
     )
     .bind(user_id)
     .bind(&from)
     .bind(&to)
     .bind(pattern)
+    .bind(routine)
     .bind(JOURNAL_LIMIT)
     .fetch_all(pool)
     .await?;
     return Ok(rows);
+}
+
+pub async fn journal_routine_titles(
+    pool: &SqlitePool,
+    user_id: i64,
+) -> Result<Vec<String>, sqlx::Error> {
+    let rows: Vec<(String,)> = sqlx::query_as(
+        "SELECT MIN(TRIM(title)) FROM routines \
+         WHERE user_id = $1 AND TRIM(title) != '' \
+         GROUP BY LOWER(TRIM(title)) ORDER BY LOWER(TRIM(title))",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+    return Ok(rows.into_iter().map(|(title,)| title).collect());
 }

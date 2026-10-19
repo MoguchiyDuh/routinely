@@ -90,6 +90,18 @@
 </div>
 </article>
 {%- endmacro %}
+{% macro archived_routine_card(item) -%}
+<article class="card routine-item">
+<div class="routine-item-main">
+<h2>{{ item.title }}</h2>
+<p class="sched">{{ item.schedule }}</p>
+</div>
+<div class="routine-actions">
+<form method="post" action="/routines/{{ item.id }}/restore"><button type="submit" class="btn btn-sm">{{ ico("repeat") }}Restore</button></form>
+<form method="post" action="/routines/{{ item.id }}/delete" data-confirm="Delete this routine permanently? Its history, proofs and uploaded photos are removed and this cannot be undone."><button type="submit" class="btn btn-sm">{{ ico("trash-2") }}Delete</button></form>
+</div>
+</article>
+{%- endmacro %}
 {% macro view_switch(active, date, who) -%}
 <nav class="view-switch" aria-label="Calendar view">
 <a href="/day?date={{ date }}&who={{ who }}"{% if active == "day" %} aria-current="page"{% endif %}>Day</a>

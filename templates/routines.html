@@ -44,7 +44,7 @@
 <summary><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#chevron-down"/></svg>Archived</summary>
 <div class="routine-list">
 {% for item in archived %}
-{{ ui::routine_card(item) }}
+{{ ui::archived_routine_card(item) }}
 {% endfor %}
 </div>
 </details>

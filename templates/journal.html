@@ -18,6 +18,15 @@
 <input id="journal-q" type="search" name="q" value="{{ q }}" maxlength="100" placeholder="Search notes and proofs (e.g. book, film)" autocomplete="off">
 <button type="submit" name="range" value="{{ range }}" class="btn btn-primary">{{ ui::ico("search") }}Search</button>
 </div>
+<div class="field journal-routine">
+<label for="journal-routine">Routine</label>
+<select id="journal-routine" name="routine">
+<option value=""{% if routine_value.is_empty() %} selected{% endif %}>All routines</option>
+{% for o in routine_options %}
+<option value="{{ o.title }}"{% if o.selected %} selected{% endif %}>{{ o.title }}</option>
+{% endfor %}
+</select>
+</div>
 <div class="chips journal-ranges" role="group" aria-label="Time range">
 {% for r in ranges %}
 {% if r.value != "custom" %}
@@ -36,14 +45,17 @@
 </div>
 <button type="submit" name="range" value="custom" class="btn btn-secondary{% if range == "custom" %} is-current{% endif %}">Apply dates</button>
 {% if !q.is_empty() %}
-<a class="btn btn-ghost" href="/journal?range={{ range }}&from={{ from_value }}&to={{ to_value }}{{ who_q }}">Clear search</a>
+<a class="btn btn-ghost" href="/journal?range={{ range }}&from={{ from_value }}&to={{ to_value }}{{ keep_q }}">Clear search</a>
+{% endif %}
+{% if !routine_value.is_empty() %}
+<a class="btn btn-ghost" href="/journal?range={{ range }}&from={{ from_value }}&to={{ to_value }}{{ who_q }}{% if !q.is_empty() %}&q={{ q|urlencode }}{% endif %}">Clear routine</a>
 {% endif %}
 </div>
 </form>
 {% if days.is_empty() %}
 <div class="card empty">
 {{ ui::ico("notebook-pen") }}
-<p>{% if q.is_empty() %}No notes or proofs in this range.{% else %}Nothing matches “{{ q }}” in this range.{% endif %}</p>
+<p>{% if q.is_empty() && !routine_value.is_empty() %}No proofs for “{{ routine_value }}” in this range.{% else if q.is_empty() %}No notes or proofs in this range.{% else %}Nothing matches “{{ q }}” in this range.{% endif %}</p>
 {% if !readonly %}<a class="btn btn-secondary" href="/day">Write today's note</a>{% endif %}
 </div>
 {% else %}
