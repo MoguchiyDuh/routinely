@@ -132,6 +132,7 @@ struct ProfileData {
     user_id: i64,
     username: String,
     timezone: String,
+    day_start: u32,
     member_since: String,
     stats: score::UserStats,
     punishments: PunishmentCountsJson,
@@ -208,7 +209,7 @@ async fn profile_view(
     };
     let shell = Shell::load(&state, &auth, "group", &headers).await?;
     let avatar = AvatarVm::load(&state.pool, user_id).await?;
-    let heat_days = score::heatmap(&state.pool, user_id, &data.timezone).await?;
+    let heat_days = score::heatmap(&state.pool, user_id, &data.timezone, data.day_start).await?;
     let heatmap = heat_days
         .iter()
         .map(|day| HeatCellVm {
@@ -261,21 +262,23 @@ async fn build_profile(
     pool: &SqlitePool,
     user_id: i64,
 ) -> Result<Option<ProfileData>, sqlx::Error> {
-    let row: Option<(i64, String, String, String)> =
-        sqlx::query_as("SELECT id, username, timezone, created_at FROM users WHERE id = $1")
-            .bind(user_id)
-            .fetch_optional(pool)
-            .await?;
-    let Some((id, username, timezone, created_at)) = row else {
+    let row: Option<(i64, String, String, i64, String)> = sqlx::query_as(
+        "SELECT id, username, timezone, day_start_hour, created_at FROM users WHERE id = $1",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+    let Some((id, username, timezone, day_start, created_at)) = row else {
         return Ok(None);
     };
+    let day_start = store::day_start_hour(day_start);
     let mut conn = pool.acquire().await?;
     let routines = store::active_routines(&mut conn, id).await?;
     drop(conn);
-    let stats = score::stats_for_user(pool, id, &timezone, &routines).await?;
+    let stats = score::stats_for_user(pool, id, &timezone, day_start, &routines).await?;
     let punishments = punishment_counts(pool, id).await?;
     let pins = recent_pins(pool, id).await?;
-    let today = store::user_today(&timezone);
+    let today = store::user_today(&timezone, day_start);
     let child_ids = store::chain_child_ids(pool, id).await?;
     let mut routine_payloads = Vec::new();
     for routine in routines.iter().filter(|r| !child_ids.contains(&r.id)) {
@@ -300,6 +303,7 @@ async fn build_profile(
         user_id: id,
         username,
         timezone,
+        day_start,
         member_since,
         stats,
         punishments,

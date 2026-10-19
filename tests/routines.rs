@@ -202,7 +202,7 @@ async fn update_routine(server: &Server, token: &str, id: i64, payload: Value) -
 }
 
 async fn tick(server: &Server, token: &str, routine_id: i64, date: Option<NaiveDate>) {
-    if let Some(day) = date.filter(|day| *day != routinely::store::user_today("UTC")) {
+    if let Some(day) = date.filter(|day| *day != routinely::store::user_today("UTC", 0)) {
         seed_tick(&server.pool, routine_id, day).await;
         return;
     }

@@ -72,9 +72,10 @@ pub async fn stats_for_user(
     pool: &SqlitePool,
     user_id: i64,
     timezone: &str,
+    day_start: u32,
     routines: &[store::RoutineRow],
 ) -> Result<UserStats, sqlx::Error> {
-    let today = store::user_today(timezone);
+    let today = store::user_today(timezone, day_start);
     let horizon = streak_horizon(today);
     let satisfied = satisfied_weekdays(pool, user_id, horizon, today).await?;
     let counts = period_counts(pool, user_id).await?;
@@ -98,9 +99,10 @@ pub async fn routine_window_pcts(
     pool: &SqlitePool,
     user_id: i64,
     timezone: &str,
+    day_start: u32,
     routines: &[store::RoutineRow],
 ) -> Result<Vec<Option<f64>>, sqlx::Error> {
-    let today = store::user_today(timezone);
+    let today = store::user_today(timezone, day_start);
     let Some(start) = window_start(today, WINDOW_30_DAYS) else {
         return Ok(routines.iter().map(|_| None).collect());
     };
@@ -120,8 +122,8 @@ pub async fn routine_window_pcts(
 }
 
 pub async fn leaderboard_rows(pool: &SqlitePool) -> Result<Vec<LeaderRow>, sqlx::Error> {
-    let users: Vec<(i64, String, String)> =
-        sqlx::query_as("SELECT id, username, timezone FROM users ORDER BY id")
+    let users: Vec<(i64, String, String, i64)> =
+        sqlx::query_as("SELECT id, username, timezone, day_start_hour FROM users ORDER BY id")
             .fetch_all(pool)
             .await?;
     let mut routines_by_user: HashMap<i64, Vec<store::RoutineRow>> = HashMap::new();
@@ -133,10 +135,17 @@ pub async fn leaderboard_rows(pool: &SqlitePool) -> Result<Vec<LeaderRow>, sqlx:
     }
     let pending = pending_counts(pool).await?;
     let mut rows = Vec::new();
-    for (user_id, username, timezone) in users {
+    for (user_id, username, timezone, day_start) in users {
         let empty: Vec<store::RoutineRow> = Vec::new();
         let routine_list = routines_by_user.get(&user_id).unwrap_or(&empty);
-        let stats = stats_for_user(pool, user_id, &timezone, routine_list).await?;
+        let stats = stats_for_user(
+            pool,
+            user_id,
+            &timezone,
+            store::day_start_hour(day_start),
+            routine_list,
+        )
+        .await?;
         rows.push(LeaderRow {
             user_id,
             username,
@@ -472,8 +481,9 @@ pub async fn heatmap(
     pool: &SqlitePool,
     user_id: i64,
     timezone: &str,
+    day_start: u32,
 ) -> Result<Vec<HeatDay>, sqlx::Error> {
-    let today = store::user_today(timezone);
+    let today = store::user_today(timezone, day_start);
     let routines = store::all_routines(pool, user_id).await?;
     let completions = completions_by_day(pool, user_id).await?;
     let start = match week_start_of(today).checked_sub_days(Days::new((HEATMAP_WEEKS - 1) * 7)) {

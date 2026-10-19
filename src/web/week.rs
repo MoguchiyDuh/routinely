@@ -600,7 +600,7 @@ async fn week_view(
     Query(query): Query<WeekQuery>,
     headers: axum::http::HeaderMap,
 ) -> WebResult {
-    let today = store::user_today(&auth.timezone);
+    let today = store::user_today(&auth.timezone, auth.day_start);
     let anchor = parse_date_param(query.date.as_deref(), today)?;
     let who = resolve_who(&state.pool, query.who.as_deref(), Who::Me).await?;
     let shell = Shell::load(&state, &auth, "calendar", &headers).await?;
@@ -635,7 +635,7 @@ async fn week_view(
             days,
             members: &members,
             today,
-            now_min: day::local_now_minutes(&auth.timezone),
+            now_min: day::local_now_minutes(&auth.timezone, auth.day_start),
             goals,
             hidden,
         },
@@ -648,7 +648,7 @@ async fn api_week(
     State(state): State<AppState>,
     Query(query): Query<WeekQuery>,
 ) -> Result<axum::Json<WeekJson>, WebError> {
-    let today = store::user_today(&auth.timezone);
+    let today = store::user_today(&auth.timezone, auth.day_start);
     let anchor = parse_date_param(query.date.as_deref(), today)?;
     let who = resolve_who(&state.pool, query.who.as_deref(), Who::All).await?;
     let (week_start, week_end, days) = build_week(
@@ -1347,7 +1347,7 @@ async fn month_view(
     Query(query): Query<WeekQuery>,
     headers: axum::http::HeaderMap,
 ) -> WebResult {
-    let today = store::user_today(&auth.timezone);
+    let today = store::user_today(&auth.timezone, auth.day_start);
     let anchor = parse_date_param(query.date.as_deref(), today)?;
     let who = resolve_who(&state.pool, query.who.as_deref(), Who::Me).await?;
     let Some((first, last)) = month_bounds(anchor) else {

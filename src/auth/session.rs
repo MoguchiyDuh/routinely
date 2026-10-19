@@ -16,6 +16,7 @@ pub struct SessionUser {
     pub id: i64,
     pub username: String,
     pub timezone: String,
+    pub day_start: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -24,6 +25,7 @@ pub struct UserRow {
     pub username: String,
     pub password_hash: String,
     pub timezone: String,
+    pub day_start: u32,
 }
 
 pub fn new_token() -> String {
@@ -69,18 +71,19 @@ pub async fn find_user_by_token(
     pool: &SqlitePool,
     token: &str,
 ) -> Result<Option<SessionUser>, sqlx::Error> {
-    let row = sqlx::query_as::<_, (i64, String, String)>(
-        "SELECT u.id, u.username, u.timezone FROM sessions s JOIN users u ON u.id = s.user_id \
+    let row = sqlx::query_as::<_, (i64, String, String, i64)>(
+        "SELECT u.id, u.username, u.timezone, u.day_start_hour FROM sessions s JOIN users u ON u.id = s.user_id \
          WHERE s.token_hash = $1 AND s.expires_at > $2",
     )
     .bind(hash_token(token))
     .bind(Utc::now().timestamp())
     .fetch_optional(pool)
     .await?;
-    return Ok(row.map(|(id, username, timezone)| SessionUser {
+    return Ok(row.map(|(id, username, timezone, day_start)| SessionUser {
         id,
         username,
         timezone,
+        day_start: crate::store::day_start_hour(day_start),
     }));
 }
 
@@ -130,18 +133,21 @@ pub async fn find_user_by_username(
     pool: &SqlitePool,
     username: &str,
 ) -> Result<Option<UserRow>, sqlx::Error> {
-    let row = sqlx::query_as::<_, (i64, String, String, String)>(
-        "SELECT id, username, password_hash, timezone FROM users WHERE lower(username) = lower($1)",
+    let row = sqlx::query_as::<_, (i64, String, String, String, i64)>(
+        "SELECT id, username, password_hash, timezone, day_start_hour FROM users WHERE lower(username) = lower($1)",
     )
     .bind(username)
     .fetch_optional(pool)
     .await?;
-    return Ok(row.map(|(id, username, password_hash, timezone)| UserRow {
-        id,
-        username,
-        password_hash,
-        timezone,
-    }));
+    return Ok(row.map(
+        |(id, username, password_hash, timezone, day_start)| UserRow {
+            id,
+            username,
+            password_hash,
+            timezone,
+            day_start: crate::store::day_start_hour(day_start),
+        },
+    ));
 }
 
 pub async fn insert_user(

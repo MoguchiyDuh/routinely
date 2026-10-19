@@ -73,7 +73,7 @@ async fn tick_ssr(
     headers: HeaderMap,
     Form(payload): Form<TickPayload>,
 ) -> WebResult {
-    let today = store::user_today(&auth.timezone);
+    let today = store::user_today(&auth.timezone, auth.day_start);
     let day = parse_date_param(query.date.as_deref(), today)?;
     ensure_today(day, today)?;
     let routine = load_active_routine(&state, auth.id, routine_id).await?;
@@ -88,7 +88,7 @@ async fn untick_ssr(
     Query(query): Query<ActionQuery>,
     headers: HeaderMap,
 ) -> WebResult {
-    let today = store::user_today(&auth.timezone);
+    let today = store::user_today(&auth.timezone, auth.day_start);
     let day = parse_date_param(query.date.as_deref(), today)?;
     ensure_today(day, today)?;
     load_active_routine(&state, auth.id, routine_id).await?;
@@ -104,7 +104,7 @@ async fn pin_ssr(
     headers: HeaderMap,
     mut multipart: Multipart,
 ) -> WebResult {
-    let today = store::user_today(&auth.timezone);
+    let today = store::user_today(&auth.timezone, auth.day_start);
     let day = parse_date_param(query.date.as_deref(), today)?;
     let mut summary: Option<String> = None;
     let mut notes: Option<String> = None;
@@ -151,8 +151,15 @@ async fn pin_ssr(
         store::add_photo_attachment(&state.pool, pin_id, &file_name).await?;
     }
     if is_htmx(&headers) {
-        let section =
-            build_routines_section(&state.pool, auth.id, &auth.timezone, day, today).await?;
+        let section = build_routines_section(
+            &state.pool,
+            auth.id,
+            &auth.timezone,
+            auth.day_start,
+            day,
+            today,
+        )
+        .await?;
         return Ok(html(&section)?);
     }
     return Ok(Redirect::to(&format!("/day?date={day}")).into_response());
@@ -165,7 +172,7 @@ async fn api_complete(
     Query(query): Query<DayQuery>,
     axum::Json(payload): axum::Json<CompletionPayload>,
 ) -> Result<Response, WebError> {
-    let today = store::user_today(&auth.timezone);
+    let today = store::user_today(&auth.timezone, auth.day_start);
     let day = parse_date_param(query.date.as_deref(), today)?;
     ensure_today(day, today)?;
     let routine = load_active_routine(&state, auth.id, routine_id).await?;
@@ -188,7 +195,7 @@ async fn api_uncomplete(
     Path(routine_id): Path<i64>,
     Query(query): Query<DayQuery>,
 ) -> Result<Response, WebError> {
-    let today = store::user_today(&auth.timezone);
+    let today = store::user_today(&auth.timezone, auth.day_start);
     let day = parse_date_param(query.date.as_deref(), today)?;
     ensure_today(day, today)?;
     load_active_routine(&state, auth.id, routine_id).await?;
@@ -230,8 +237,15 @@ async fn finish_ssr(
     query: &ActionQuery,
 ) -> WebResult {
     if is_htmx(headers) {
-        let section =
-            build_routines_section(&state.pool, auth.id, &auth.timezone, day, today).await?;
+        let section = build_routines_section(
+            &state.pool,
+            auth.id,
+            &auth.timezone,
+            auth.day_start,
+            day,
+            today,
+        )
+        .await?;
         return Ok(html(&section)?);
     }
     return Ok(Redirect::to(&query.redirect_target(day)).into_response());

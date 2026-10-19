@@ -84,6 +84,7 @@ struct UserBody {
     id: i64,
     username: String,
     timezone: String,
+    day_start: u32,
     avatar: serde_json::Value,
 }
 
@@ -93,6 +94,7 @@ impl UserBody {
             id: user.id,
             username: user.username.clone(),
             timezone: user.timezone.clone(),
+            day_start: user.day_start,
             avatar,
         };
     }

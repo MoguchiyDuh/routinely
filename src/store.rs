@@ -2,7 +2,9 @@ use std::str::FromStr;
 
 use chrono::Datelike;
 use chrono::NaiveDate;
+use chrono::NaiveDateTime;
 use chrono::NaiveTime;
+use chrono::Timelike;
 use chrono::Utc;
 use chrono_tz::Tz;
 use serde::Deserialize;
@@ -457,8 +459,45 @@ pub fn user_timezone(tz: &str) -> Tz {
     return Tz::from_str(tz).unwrap_or(chrono_tz::UTC);
 }
 
-pub fn user_today(tz: &str) -> NaiveDate {
-    return Utc::now().with_timezone(&user_timezone(tz)).date_naive();
+pub const MAX_DAY_START_HOUR: u32 = 6;
+
+pub fn day_start_hour(raw: i64) -> u32 {
+    return u32::try_from(raw).unwrap_or(0).min(MAX_DAY_START_HOUR);
+}
+
+pub fn logical_date(local: NaiveDateTime, day_start: u32) -> NaiveDate {
+    let shifted = local - chrono::Duration::hours(i64::from(day_start.min(MAX_DAY_START_HOUR)));
+    return shifted.date();
+}
+
+pub fn logical_minutes(local: NaiveTime, day_start: u32) -> i64 {
+    let minutes = i64::from(local.hour()) * 60 + i64::from(local.minute());
+    if local.hour() < day_start.min(MAX_DAY_START_HOUR) {
+        return minutes + 24 * 60;
+    }
+    return minutes;
+}
+
+pub fn user_today(tz: &str, day_start: u32) -> NaiveDate {
+    let local = Utc::now().with_timezone(&user_timezone(tz)).naive_local();
+    return logical_date(local, day_start);
+}
+
+pub async fn get_day_start(pool: &SqlitePool, user_id: i64) -> Result<u32, sqlx::Error> {
+    let row: Option<(i64,)> = sqlx::query_as("SELECT day_start_hour FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await?;
+    return Ok(row.map(|(hour,)| day_start_hour(hour)).unwrap_or(0));
+}
+
+pub async fn set_day_start(pool: &SqlitePool, user_id: i64, hour: u32) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE users SET day_start_hour = $1 WHERE id = $2")
+        .bind(i64::from(hour.min(MAX_DAY_START_HOUR)))
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    return Ok(());
 }
 
 pub fn parse_period(raw: &str) -> Option<PeriodKind> {

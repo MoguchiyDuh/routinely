@@ -60,6 +60,25 @@
 </form>
 </section>
 <section class="card">
+<h2>Day</h2>
+<p class="hint">Your day rolls over at this hour instead of midnight. Before it, Today, ticking, streaks and penalties still count as the previous day.</p>
+{% if let Some(e) = day_error %}
+<p class="form-error" role="alert">{{ e }}</p>
+{% endif %}
+<form method="post" action="/settings/day" class="settings-form">
+<div class="field">
+<label for="pref-day-start">Day starts at</label>
+<select id="pref-day-start" name="day_start">
+{% for o in day_starts %}
+<option value="{{ o.hour }}"{% if o.selected %} selected{% endif %}>{{ o.label }}</option>
+{% endfor %}
+</select>
+<p class="hint">Capped at 06:00: any later and you're not staying up late, you've just moved to another timezone.</p>
+</div>
+<button type="submit" class="btn btn-primary">Save day start</button>
+</form>
+</section>
+<section class="card">
 <h2>Notifications</h2>
 <p class="hint">Reminder defaults below apply to <strong>new</strong> routines and todos only. Existing items keep their reminders; edit them on the item.</p>
 {% if let Some(e) = notif_error %}

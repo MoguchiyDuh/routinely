@@ -6,7 +6,7 @@
 <header class="page-head">
 <div>
 <h1>{% if is_today %}Today{% else %}{{ weekday }}{% endif %}</h1>
-<p class="page-sub tnum">{% if is_today %}{{ weekday }}, {% endif %}{{ date_label }}</p>
+<p class="page-sub tnum">{% if is_today %}{{ weekday }}, {% endif %}{{ date_label }}{% if let Some(until) = overtime %} &middot; <span class="overtime" title="Your day starts at {{ until }}, set in Settings">still today until {{ until }}</span>{% endif %}</p>
 </div>
 <div class="head-actions">
 {{ ui::view_switch("day", date, who_param) }}

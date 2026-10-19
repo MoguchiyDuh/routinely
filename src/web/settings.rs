@@ -21,6 +21,7 @@ use crate::auth::extract::PageAuth;
 use crate::auth::extract::token_from_header_value;
 use crate::avatar;
 use crate::notify;
+use crate::store;
 use crate::web::AvatarVm;
 use crate::web::WebError;
 use crate::web::WebResult;
@@ -61,6 +62,14 @@ pub struct SettingsPage {
     confirm_error: Option<&'static str>,
     notif: NotifPrefsVm,
     notif_error: Option<&'static str>,
+    day_starts: Vec<DayStartOptionVm>,
+    day_error: Option<&'static str>,
+}
+
+struct DayStartOptionVm {
+    hour: u32,
+    label: String,
+    selected: bool,
 }
 
 struct NotifPrefsVm {
@@ -103,6 +112,17 @@ struct SettingsErrors {
     new: Option<&'static str>,
     confirm: Option<&'static str>,
     notifications: Option<&'static str>,
+    day: Option<&'static str>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DayStartForm {
+    day_start: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DayStartApiPayload {
+    day_start: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -156,10 +176,12 @@ pub fn router() -> Router<AppState> {
         .route("/settings", get(settings_view))
         .route("/settings/password", post(password_ssr))
         .route("/settings/notifications", post(notifications_ssr))
+        .route("/settings/day", post(day_start_ssr))
         .route("/settings/avatar", post(avatar_ssr))
         .route("/settings/avatar/icon", post(icon_ssr))
         .route("/settings/avatar/remove", post(remove_ssr))
         .route("/api/v1/me/password", put(api_password))
+        .route("/api/v1/me/day_start", put(api_day_start))
         .route("/api/v1/me/avatar", put(api_avatar).delete(api_remove))
         .route("/api/v1/me/avatar/icon", put(api_icon));
 }
@@ -260,6 +282,61 @@ async fn notifications_ssr(
             );
         }
     }
+}
+
+fn parse_day_start(raw: Option<i64>) -> Result<u32, &'static str> {
+    return raw
+        .and_then(|hour| u32::try_from(hour).ok())
+        .filter(|hour| *hour <= store::MAX_DAY_START_HOUR)
+        .ok_or("day start must be a whole hour from 0 to 6");
+}
+
+async fn day_start_ssr(
+    PageAuth(auth): PageAuth,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Form(form): Form<DayStartForm>,
+) -> WebResult {
+    let raw = form
+        .day_start
+        .as_deref()
+        .and_then(|value| value.trim().parse::<i64>().ok());
+    match parse_day_start(raw) {
+        Ok(hour) => {
+            store::set_day_start(&state.pool, auth.id, hour).await?;
+            return Ok(crate::web::shell::redirect_with_flash(
+                "/settings",
+                "Day start saved",
+                state.config.cookie_secure,
+            ));
+        }
+        Err(message) => {
+            let errors = SettingsErrors {
+                day: Some(message),
+                ..SettingsErrors::default()
+            };
+            let shell = Shell::load(&state, &auth, "settings", &headers).await?;
+            let page = build_page(&state, &auth.id, shell, errors).await?;
+            let body = page.render()?;
+            return Ok(
+                (StatusCode::UNPROCESSABLE_ENTITY, axum::response::Html(body)).into_response(),
+            );
+        }
+    }
+}
+
+async fn api_day_start(
+    ApiAuth(auth): ApiAuth,
+    State(state): State<AppState>,
+    axum::Json(payload): axum::Json<DayStartApiPayload>,
+) -> WebResult {
+    let hour = parse_day_start(payload.day_start).map_err(WebError::Validation)?;
+    store::set_day_start(&state.pool, auth.id, hour).await?;
+    return Ok((
+        StatusCode::OK,
+        axum::Json(serde_json::json!({ "ok": true, "day_start": hour })),
+    )
+        .into_response());
 }
 
 fn unit_factor(unit: Option<&str>) -> Result<i64, &'static str> {
@@ -657,6 +734,14 @@ async fn build_page(
         });
     }
     let prefs = notify::get_prefs(&state.pool, *user_id).await?;
+    let day_start = store::get_day_start(&state.pool, *user_id).await?;
+    let day_starts = (0..=store::MAX_DAY_START_HOUR)
+        .map(|hour| DayStartOptionVm {
+            hour,
+            label: format!("{hour:02}:00"),
+            selected: hour == day_start,
+        })
+        .collect();
     return Ok(SettingsPage {
         shell,
         avatar,
@@ -670,6 +755,8 @@ async fn build_page(
         confirm_error: errors.confirm,
         notif: vm_from_prefs(&prefs),
         notif_error: errors.notifications,
+        day_starts,
+        day_error: errors.day,
     });
 }
 

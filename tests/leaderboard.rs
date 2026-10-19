@@ -187,7 +187,7 @@ async fn backdate_start(server: &Server, routine_id: i64, date: NaiveDate) {
 }
 
 async fn tick(server: &Server, token: &str, routine_id: i64, date: NaiveDate) -> i64 {
-    if date != routinely::store::user_today("UTC") {
+    if date != routinely::store::user_today("UTC", 0) {
         return seed_tick(&server.pool, routine_id, date).await;
     }
     let response = json_call(

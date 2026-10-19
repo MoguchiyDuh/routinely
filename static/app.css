@@ -303,6 +303,10 @@ main {
   font-size: var(--text-sm);
 }
 
+.page-sub .overtime {
+  color: var(--warning);
+}
+
 .brand {
   display: inline-flex;
   align-items: center;

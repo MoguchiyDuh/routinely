@@ -103,7 +103,7 @@ impl FromRequestParts<AppState> for PageAuth {
 }
 
 async fn run_eval_hook(pool: &SqlitePool, user: &SessionUser) -> Result<(), sqlx::Error> {
-    let today = store::user_today(&user.timezone);
+    let today = store::user_today(&user.timezone, user.day_start);
     let today_str = today.to_string();
     let row: Option<(Option<String>,)> =
         sqlx::query_as("SELECT last_evaluated_day FROM users WHERE id = $1")

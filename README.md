@@ -7,6 +7,7 @@ Small self-hosted routine tracker for a group of friends. Track recurring routin
 - **Routines**: fixed weekdays (with optional time) or N times per day/week/month/year, optional start date, end date or week count
 - **Calendar**: day timeline, week time grid with weekly goal lanes, month overview
 - **Ticking**: only today's routines can be ticked; past and future days are read-only
+- **Day start**: per-user rollover hour (00:00–06:00, default midnight). Before it, today, ticking, streaks and penalty evaluation still belong to the previous day, so a 22:00 routine can be ticked at 02:00
 - **Proof**: attach a note, link or photos to a completed routine
 - **Archive**: archived routines can be restored or deleted permanently with their history and photos
 - **Todos and deadlines**: dated tasks shown alongside routines
@@ -83,6 +84,7 @@ JSON API (cookie auth, under `/api/v1`):
 | GET | `/notifications/unread_count` |
 | POST | `/notifications/read`, `/notifications/{id}/read` |
 | GET, PUT | `/notifications/prefs` |
+| PUT | `/me/day_start` (`day_start`: 0–6) |
 | GET | `/reminders?target_type&target_id` |
 | POST | `/reminders` (`target_type`, `target_id`, `offset_value`, `offset_unit`, `at_time`) |
 | DELETE | `/reminders/{id}` |

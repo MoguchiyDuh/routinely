@@ -329,11 +329,12 @@ async fn routines_page(
     let mut conn = state.pool.acquire().await?;
     let heads = store::routine_heads(&mut conn, target).await?;
     drop(conn);
-    let today = store::user_today(&auth.timezone);
+    let today = store::user_today(&auth.timezone, auth.day_start);
     let pcts = if readonly {
         vec![None; heads.len()]
     } else {
-        score::routine_window_pcts(&state.pool, auth.id, &auth.timezone, &heads).await?
+        score::routine_window_pcts(&state.pool, auth.id, &auth.timezone, auth.day_start, &heads)
+            .await?
     };
     let mut active = Vec::new();
     let mut finished = Vec::new();
@@ -402,7 +403,7 @@ async fn routine_view_page(
     let Some(schedule) = store::schedule_from_row(routine) else {
         return Err(WebError::NotFound);
     };
-    let today = store::user_today(&auth.timezone);
+    let today = store::user_today(&auth.timezone, auth.day_start);
     let owner_avatar = AvatarVm::load(&state.pool, routine.user_id).await?;
     let own = routine.user_id == auth.id;
     let duration = match (routine.iterations, routine.end_date) {
@@ -452,7 +453,7 @@ async fn api_get_routine(
         return Err(WebError::NotFound);
     };
     let routine = visible.routine;
-    let today = store::user_today(&auth.timezone);
+    let today = store::user_today(&auth.timezone, auth.day_start);
     let finished = store::schedule_from_row(&routine)
         .map(|schedule| is_finished_on(&schedule, today))
         .unwrap_or(false);
@@ -509,7 +510,7 @@ async fn new_routine_page(
         form.submit_label = "Create routine";
         form.cancel = false;
         form.show_start = true;
-        let today = store::user_today(&auth.timezone);
+        let today = store::user_today(&auth.timezone, auth.day_start);
         if row.end_date.is_some_and(|end| end < today) {
             form.duration_end_date = false;
             form.duration_iterations = false;
@@ -534,7 +535,7 @@ async fn create_routine_ssr(
     headers: axum::http::HeaderMap,
     Form(payload): Form<RoutineFormPayload>,
 ) -> WebResult {
-    let today = store::user_today(&auth.timezone);
+    let today = store::user_today(&auth.timezone, auth.day_start);
     match form_spec(&payload, today) {
         Ok(spec) => {
             let reminders = match form_reminders(payload.reminders_json.as_deref(), &spec) {
@@ -609,7 +610,7 @@ async fn update_routine_ssr(
     if row.archived_at.is_some() || !store::is_chain_head(&state.pool, routine_id).await? {
         return Err(WebError::Conflict);
     }
-    let today = store::user_today(&auth.timezone);
+    let today = store::user_today(&auth.timezone, auth.day_start);
     match form_spec(&payload, today) {
         Ok(spec) => {
             let reminders = match form_reminders(payload.reminders_json.as_deref(), &spec) {
@@ -726,7 +727,7 @@ async fn api_create_routine(
     State(state): State<AppState>,
     axum::Json(payload): axum::Json<RoutineJsonPayload>,
 ) -> Result<axum::Json<RoutineCreated>, WebError> {
-    let today = store::user_today(&auth.timezone);
+    let today = store::user_today(&auth.timezone, auth.day_start);
     let raw = json_raw(&payload)?;
     let spec = build_spec(raw, today).map_err(validation_error)?;
     if let Some(reminders) = &payload.reminders {
@@ -751,7 +752,7 @@ async fn api_update_routine(
     Path(routine_id): Path<i64>,
     axum::Json(payload): axum::Json<RoutineJsonPayload>,
 ) -> Result<axum::Json<RoutineCreated>, WebError> {
-    let today = store::user_today(&auth.timezone);
+    let today = store::user_today(&auth.timezone, auth.day_start);
     let raw = json_raw(&payload)?;
     let spec = build_spec(raw, today).map_err(validation_error)?;
     if let Some(reminders) = &payload.reminders {

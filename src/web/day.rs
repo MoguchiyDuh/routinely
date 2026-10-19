@@ -10,7 +10,6 @@ use axum::routing::post;
 use chrono::DateTime;
 use chrono::Datelike;
 use chrono::NaiveDate;
-use chrono::Timelike;
 use chrono::Utc;
 use serde::Deserialize;
 use serde::Serialize;
@@ -37,6 +36,7 @@ pub struct DayPage {
     prev_date: NaiveDate,
     next_date: NaiveDate,
     is_today: bool,
+    overtime: Option<String>,
     onboarding: Option<OnboardingVm>,
     progress_done: u32,
     progress_total: u32,
@@ -272,7 +272,7 @@ async fn day_view(
     Query(query): Query<DayQuery>,
     headers: axum::http::HeaderMap,
 ) -> WebResult {
-    let today = store::user_today(&auth.timezone);
+    let today = store::user_today(&auth.timezone, auth.day_start);
     let date = parse_date_param(query.date.as_deref(), today)?;
     let members = store::list_members(&state.pool).await?;
     let target = match query.who.as_deref().map(str::trim) {
@@ -287,7 +287,7 @@ async fn day_view(
     store::materialize(&mut conn, target, today).await?;
     drop(conn);
     let shell = Shell::load(&state, &auth, "calendar", &headers).await?;
-    let now_min = local_now_minutes(&auth.timezone);
+    let now_min = local_now_minutes(&auth.timezone, auth.day_start);
     let data = build_routine_data(&state.pool, target, date, today, now_min).await?;
     let edit_id = if readonly { None } else { query.edit };
     let lists = build_todo_lists(&state.pool, target, &auth.timezone, edit_id).await?;
@@ -314,6 +314,8 @@ async fn day_view(
         prev_date: prev_day(date),
         next_date: next_day(date),
         is_today: date == today,
+        overtime: (date == today && now_min >= 24 * 60)
+            .then(|| format!("{:02}:00", auth.day_start)),
         onboarding,
         progress_done: data.progress_done,
         progress_total,
@@ -365,7 +367,7 @@ async fn api_day(
     State(state): State<AppState>,
     Query(query): Query<DayQuery>,
 ) -> Result<axum::Json<DayJson>, WebError> {
-    let today = store::user_today(&auth.timezone);
+    let today = store::user_today(&auth.timezone, auth.day_start);
     let date = parse_date_param(query.date.as_deref(), today)?;
     let mut conn = state.pool.acquire().await?;
     store::materialize(&mut conn, auth.id, today).await?;
@@ -576,10 +578,11 @@ pub(crate) async fn build_routines_section(
     pool: &SqlitePool,
     user_id: i64,
     timezone: &str,
+    day_start: u32,
     date: NaiveDate,
     today: NaiveDate,
 ) -> Result<RoutinesSection, WebError> {
-    let now_min = local_now_minutes(timezone);
+    let now_min = local_now_minutes(timezone, day_start);
     let data = build_routine_data(pool, user_id, date, today, now_min).await?;
     let progress_percent = progress_percent(data.progress_done, data.progress_total);
     return Ok(RoutinesSection {
@@ -903,7 +906,7 @@ fn progress_percent(done: u32, total: u32) -> u32 {
     return done * 100 / total;
 }
 
-pub(crate) fn local_now_minutes(timezone: &str) -> i64 {
+pub(crate) fn local_now_minutes(timezone: &str, day_start: u32) -> i64 {
     let now = Utc::now().with_timezone(&store::user_timezone(timezone));
-    return i64::from(now.hour()) * 60 + i64::from(now.minute());
+    return store::logical_minutes(now.time(), day_start);
 }

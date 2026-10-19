@@ -185,7 +185,7 @@ async fn backdate_start(server: &Server, routine_id: i64, date: NaiveDate) {
 }
 
 async fn tick(server: &Server, token: &str, routine_id: i64, date: NaiveDate) {
-    if date != routinely::store::user_today("UTC") {
+    if date != routinely::store::user_today("UTC", 0) {
         seed_tick(&server.pool, routine_id, date).await;
         return;
     }
@@ -201,7 +201,7 @@ async fn tick(server: &Server, token: &str, routine_id: i64, date: NaiveDate) {
 }
 
 async fn untick(server: &Server, token: &str, routine_id: i64, date: NaiveDate) {
-    if date != routinely::store::user_today("UTC") {
+    if date != routinely::store::user_today("UTC", 0) {
         routinely::store::untick(&server.pool, routine_id, date)
             .await
             .unwrap();

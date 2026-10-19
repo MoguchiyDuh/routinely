@@ -77,7 +77,7 @@ async fn create_ssr(
     headers: HeaderMap,
     Form(payload): Form<TodoForm>,
 ) -> WebResult {
-    let today = store::user_today(&auth.timezone);
+    let today = store::user_today(&auth.timezone, auth.day_start);
     let day = parse_date_param(query.date.as_deref(), today)?;
     let due = resolve_due(
         payload.kind.as_deref(),
@@ -129,7 +129,7 @@ async fn region_ssr(
     Query(query): Query<DayQuery>,
     headers: HeaderMap,
 ) -> WebResult {
-    let today = store::user_today(&auth.timezone);
+    let today = store::user_today(&auth.timezone, auth.day_start);
     let day = parse_date_param(query.date.as_deref(), today)?;
     if !is_htmx(&headers) {
         let target = match query.edit {
@@ -151,7 +151,7 @@ async fn update_ssr(
     headers: HeaderMap,
     Form(payload): Form<TodoForm>,
 ) -> WebResult {
-    let today = store::user_today(&auth.timezone);
+    let today = store::user_today(&auth.timezone, auth.day_start);
     let day = parse_date_param(query.date.as_deref(), today)?;
     let reminders = match non_empty(payload.reminders_json.as_deref()) {
         Some(raw) => Some(
@@ -280,7 +280,7 @@ async fn delete_ssr(
     Query(query): Query<DayQuery>,
     headers: HeaderMap,
 ) -> WebResult {
-    let today = store::user_today(&auth.timezone);
+    let today = store::user_today(&auth.timezone, auth.day_start);
     let day = parse_date_param(query.date.as_deref(), today)?;
     let deleted = store::delete_todo(&state.pool, auth.id, todo_id).await?;
     if !deleted {
@@ -296,7 +296,7 @@ async fn toggle_ssr(
     Query(query): Query<ActionQuery>,
     headers: HeaderMap,
 ) -> WebResult {
-    let today = store::user_today(&auth.timezone);
+    let today = store::user_today(&auth.timezone, auth.day_start);
     let day = parse_date_param(query.date.as_deref(), today)?;
     let toggled = store::toggle_todo(&state.pool, auth.id, todo_id).await?;
     if !toggled {

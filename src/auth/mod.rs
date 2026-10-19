@@ -99,6 +99,7 @@ pub async fn perform_signup(
         id,
         username,
         timezone,
+        day_start: 0,
     });
 }
 
@@ -125,6 +126,7 @@ pub async fn perform_login(
         id: user.id,
         username: user.username,
         timezone: user.timezone,
+        day_start: user.day_start,
     });
 }
 

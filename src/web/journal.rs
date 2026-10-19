@@ -145,7 +145,7 @@ async fn journal_view(
     Query(query): Query<JournalQuery>,
     headers: axum::http::HeaderMap,
 ) -> WebResult {
-    let today = store::user_today(&auth.timezone);
+    let today = store::user_today(&auth.timezone, auth.day_start);
     let (range, from, to) = resolve_range(
         query.range.as_deref().unwrap_or("week"),
         today,

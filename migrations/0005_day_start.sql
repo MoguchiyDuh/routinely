@@ -1,0 +1,1 @@
+ALTER TABLE users ADD COLUMN day_start_hour BIGINT NOT NULL DEFAULT 0 CHECK (day_start_hour BETWEEN 0 AND 6);

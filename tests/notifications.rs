@@ -587,7 +587,7 @@ async fn penalty_events_default_on_without_flooding_history() {
     .execute(&pool)
     .await
     .unwrap();
-    let today = store::user_today("UTC");
+    let today = store::user_today("UTC", 0);
     let start = today.checked_sub_days(chrono::Days::new(3)).unwrap();
     store::create_routine(
         &pool,
@@ -856,7 +856,7 @@ async fn reminder_validation_rules() {
 async fn editing_schedule_carries_reminders_to_new_chain_row() {
     let pool = pool().await;
     let user = make_user(&pool, "quinn", "UTC").await;
-    let today = store::user_today("UTC");
+    let today = store::user_today("UTC", 0);
     let routine = store::create_routine(
         &pool,
         user,
@@ -1439,7 +1439,7 @@ async fn default_routine_reminder_fires_in_tick() {
 async fn editing_time_drops_reminders_that_become_invalid() {
     let pool = pool().await;
     let user = make_user(&pool, "prune", "UTC").await;
-    let today = store::user_today("UTC");
+    let today = store::user_today("UTC", 0);
     let routine =
         store::create_routine(&pool, user, &routine_spec("P", Some("10:00"), "2020-01-01"))
             .await

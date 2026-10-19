@@ -693,7 +693,9 @@ async fn heatmap_completed_day_level_4_missed_day_level_1() {
     let missed_day = past(3);
     seed_tick(&server.pool, routine_id, done_day).await;
 
-    let days = score::heatmap(&server.pool, user_id, "UTC").await.unwrap();
+    let days = score::heatmap(&server.pool, user_id, "UTC", 0)
+        .await
+        .unwrap();
     assert_eq!(days.len(), 84, "heatmap must cover 12 weeks");
     let done_cell = days.iter().find(|d| d.date == done_day).unwrap();
     assert_eq!(done_cell.done, 1);

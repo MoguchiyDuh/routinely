@@ -440,22 +440,24 @@ pub fn spawn(pool: SqlitePool) -> JoinHandle<()> {
 }
 
 pub async fn run_tick(pool: &SqlitePool, now_utc: DateTime<Utc>) {
-    let users: Vec<(i64, String, String)> =
-        match sqlx::query_as("SELECT id, username, timezone FROM users ORDER BY id")
-            .fetch_all(pool)
-            .await
-        {
-            Ok(rows) => rows,
-            Err(error) => {
-                tracing::warn!(%error, "notification tick could not list users");
-                return;
-            }
-        };
-    for (id, username, timezone) in users {
+    let users: Vec<(i64, String, String, i64)> = match sqlx::query_as(
+        "SELECT id, username, timezone, day_start_hour FROM users ORDER BY id",
+    )
+    .fetch_all(pool)
+    .await
+    {
+        Ok(rows) => rows,
+        Err(error) => {
+            tracing::warn!(%error, "notification tick could not list users");
+            return;
+        }
+    };
+    for (id, username, timezone, day_start) in users {
         let user = SessionUser {
             id,
             username,
             timezone,
+            day_start: store::day_start_hour(day_start),
         };
         if let Err(error) = tick_user(pool, &user, now_utc).await {
             tracing::warn!(user_id = id, %error, "notification tick failed for user");
@@ -477,8 +479,9 @@ async fn tick_user(
     let tz = store::user_timezone(&user.timezone);
     let local_now = now_utc.with_timezone(&tz);
     let today = local_now.date_naive();
+    let logical_today = store::logical_date(local_now.naive_local(), user.day_start);
     let (prefs, since) = resolve_prefs(pool, user.id, now_utc).await?;
-    if let Err(error) = evaluate_if_stale(pool, user, today).await {
+    if let Err(error) = evaluate_if_stale(pool, user, logical_today).await {
         tracing::warn!(user_id = user.id, %error, "penalty evaluation failed");
     }
     if !prefs.enabled || in_quiet_hours(&prefs, local_now.time()) {
@@ -487,7 +490,7 @@ async fn tick_user(
     routine_reminders(pool, user, tz, now_utc, today).await?;
     todo_reminders(pool, user, tz, now_utc).await?;
     if prefs.day_end_enabled {
-        day_end_nudge(pool, user, &prefs, local_now.time(), today, now_utc).await?;
+        day_end_nudge(pool, user, &prefs, local_now.time(), logical_today, now_utc).await?;
     }
     if prefs.penalty_enabled {
         penalty_events(pool, user, now_utc, since).await?;
@@ -888,7 +891,9 @@ async fn day_end_nudge(
     let Some(threshold) = parse_clock(&prefs.day_end_time) else {
         return Ok(());
     };
-    if local_time < threshold {
+    if store::logical_minutes(local_time, user.day_start)
+        < store::logical_minutes(threshold, user.day_start)
+    {
         return Ok(());
     }
     let key = format!("dayend:{today}");
