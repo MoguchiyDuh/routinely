@@ -5,10 +5,7 @@ use rand::RngExt;
 use rand::rng;
 use sha2::Digest;
 use sha2::Sha256;
-use sqlx::PgPool;
-
-use crate::kv::Kv;
-use crate::kv::KvError;
+use sqlx::SqlitePool;
 
 use super::SESSION_COOKIE_NAME;
 
@@ -51,58 +48,75 @@ pub fn clear_cookie() -> String {
     return format!("{SESSION_COOKIE_NAME}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0");
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum SessionError {
-    #[error(transparent)]
-    Db(#[from] sqlx::Error),
-    #[error(transparent)]
-    Kv(#[from] KvError),
-}
-
-pub async fn create(kv: &Kv, user_id: i64, ttl: Duration) -> Result<String, KvError> {
+pub async fn create(pool: &SqlitePool, user_id: i64, ttl: Duration) -> Result<String, sqlx::Error> {
     let token = new_token();
-    kv.session_put(&hash_token(&token), user_id, ttl).await?;
+    let now = Utc::now().timestamp();
+    let expires_at = now.saturating_add(i64::try_from(ttl.as_secs().max(1)).unwrap_or(i64::MAX));
+    sqlx::query("DELETE FROM sessions WHERE expires_at <= $1")
+        .bind(now)
+        .execute(pool)
+        .await?;
+    sqlx::query("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ($1, $2, $3)")
+        .bind(hash_token(&token))
+        .bind(user_id)
+        .bind(expires_at)
+        .execute(pool)
+        .await?;
     return Ok(token);
 }
 
 pub async fn find_user_by_token(
-    pool: &PgPool,
-    kv: &Kv,
+    pool: &SqlitePool,
     token: &str,
-) -> Result<Option<SessionUser>, SessionError> {
-    let token_hash = hash_token(token);
-    let Some(user_id) = kv.session_user(&token_hash).await? else {
-        return Ok(None);
-    };
+) -> Result<Option<SessionUser>, sqlx::Error> {
     let row = sqlx::query_as::<_, (i64, String, String)>(
-        "SELECT id, username, timezone FROM users WHERE id = $1",
+        "SELECT u.id, u.username, u.timezone FROM sessions s JOIN users u ON u.id = s.user_id \
+         WHERE s.token_hash = $1 AND s.expires_at > $2",
     )
-    .bind(user_id)
+    .bind(hash_token(token))
+    .bind(Utc::now().timestamp())
     .fetch_optional(pool)
     .await?;
-    let Some((id, username, timezone)) = row else {
-        kv.session_delete(&token_hash).await?;
-        return Ok(None);
-    };
-    return Ok(Some(SessionUser {
+    return Ok(row.map(|(id, username, timezone)| SessionUser {
         id,
         username,
         timezone,
     }));
 }
 
-pub async fn delete(kv: &Kv, token: &str) -> Result<(), KvError> {
-    return kv.session_delete(&hash_token(token)).await;
+pub async fn delete(pool: &SqlitePool, token: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM sessions WHERE token_hash = $1")
+        .bind(hash_token(token))
+        .execute(pool)
+        .await?;
+    return Ok(());
 }
 
-pub async fn delete_other_sessions(kv: &Kv, user_id: i64, keep_token: &str) -> Result<(), KvError> {
-    return kv
-        .session_delete_others(user_id, &hash_token(keep_token))
-        .await;
+pub async fn delete_other_sessions(
+    pool: &SqlitePool,
+    user_id: i64,
+    keep_token: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM sessions WHERE user_id = $1 AND token_hash <> $2")
+        .bind(user_id)
+        .bind(hash_token(keep_token))
+        .execute(pool)
+        .await?;
+    return Ok(());
+}
+
+pub async fn session_count(pool: &SqlitePool, user_id: i64) -> Result<i64, sqlx::Error> {
+    let (count,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM sessions WHERE user_id = $1 AND expires_at > $2")
+            .bind(user_id)
+            .bind(Utc::now().timestamp())
+            .fetch_one(pool)
+            .await?;
+    return Ok(count);
 }
 
 pub async fn password_hash_by_id(
-    pool: &PgPool,
+    pool: &SqlitePool,
     user_id: i64,
 ) -> Result<Option<String>, sqlx::Error> {
     let row: Option<(String,)> = sqlx::query_as("SELECT password_hash FROM users WHERE id = $1")
@@ -113,7 +127,7 @@ pub async fn password_hash_by_id(
 }
 
 pub async fn find_user_by_username(
-    pool: &PgPool,
+    pool: &SqlitePool,
     username: &str,
 ) -> Result<Option<UserRow>, sqlx::Error> {
     let row = sqlx::query_as::<_, (i64, String, String, String)>(
@@ -131,7 +145,7 @@ pub async fn find_user_by_username(
 }
 
 pub async fn insert_user(
-    pool: &PgPool,
+    pool: &SqlitePool,
     username: &str,
     password_hash: &str,
     timezone: &str,

@@ -57,8 +57,6 @@ pub enum WebError {
     #[error(transparent)]
     Db(#[from] sqlx::Error),
     #[error(transparent)]
-    Kv(#[from] crate::kv::KvError),
-    #[error(transparent)]
     Template(#[from] askama::Error),
     #[error(transparent)]
     Io(#[from] std::io::Error),
@@ -192,11 +190,7 @@ pub async fn current_user(
     let Some(token) = token_from_header_value(value) else {
         return Ok(None);
     };
-    return match session::find_user_by_token(&state.pool, &state.kv, &token).await {
-        Ok(user) => Ok(user),
-        Err(session::SessionError::Db(err)) => Err(WebError::Db(err)),
-        Err(session::SessionError::Kv(err)) => Err(WebError::Kv(err)),
-    };
+    return Ok(session::find_user_by_token(&state.pool, &token).await?);
 }
 
 #[derive(Debug, serde::Deserialize)]

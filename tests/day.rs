@@ -11,7 +11,7 @@ use chrono::Weekday;
 use serde_json::Value;
 use sha2::Digest;
 use sha2::Sha256;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 
@@ -30,7 +30,7 @@ const PNG_BYTES: &[u8] = &[
 
 struct Server {
     addr: SocketAddr,
-    pool: PgPool,
+    pool: SqlitePool,
 }
 
 #[derive(Debug)]
@@ -72,7 +72,6 @@ async fn setup(_name: &str) -> Server {
     let pool = db::init(&config).await.unwrap();
     let state = AppState {
         pool: pool.clone(),
-        kv: common::kv(&config).await,
         config: config.clone(),
     };
     let router = routinely::app::build_router(state);
@@ -1170,7 +1169,7 @@ async fn htmx_tick_returns_routines_fragment_and_updates_state() {
     assert_eq!(completions, 0, "untick must remove the completion");
 }
 
-async fn seed_tick(pool: &PgPool, routine_id: i64, date: NaiveDate) -> i64 {
+async fn seed_tick(pool: &SqlitePool, routine_id: i64, date: NaiveDate) -> i64 {
     let (user_id,): (i64,) = sqlx::query_as("SELECT user_id FROM routines WHERE id = $1")
         .bind(routine_id)
         .fetch_one(pool)

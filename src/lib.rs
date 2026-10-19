@@ -6,7 +6,6 @@ pub mod avatar;
 pub mod config;
 pub mod cookie;
 pub mod db;
-pub mod kv;
 pub mod punish;
 pub mod recurrence;
 pub mod score;

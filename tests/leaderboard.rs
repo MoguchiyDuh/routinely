@@ -9,7 +9,7 @@ use chrono::NaiveDate;
 use chrono::Utc;
 use chrono::Weekday;
 use serde_json::Value;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 
@@ -26,7 +26,7 @@ const PASSWORD: &str = "password123";
 
 struct Server {
     addr: SocketAddr,
-    pool: PgPool,
+    pool: SqlitePool,
 }
 
 #[derive(Debug)]
@@ -68,7 +68,6 @@ async fn setup(_name: &str) -> Server {
     let pool = db::init(&config).await.unwrap();
     let state = AppState {
         pool: pool.clone(),
-        kv: common::kv(&config).await,
         config: config.clone(),
     };
     let router = routinely::app::build_router(state);
@@ -832,7 +831,7 @@ async fn json_twins_shapes_and_unauth() {
     assert_eq!(unauth_profile_api.status, 401);
 }
 
-async fn seed_tick(pool: &PgPool, routine_id: i64, date: NaiveDate) -> i64 {
+async fn seed_tick(pool: &SqlitePool, routine_id: i64, date: NaiveDate) -> i64 {
     let (user_id,): (i64,) = sqlx::query_as("SELECT user_id FROM routines WHERE id = $1")
         .bind(routine_id)
         .fetch_one(pool)

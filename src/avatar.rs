@@ -7,7 +7,7 @@ use image::ImageReader;
 use image::imageops::FilterType;
 use sha2::Digest;
 use sha2::Sha256;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use thiserror::Error;
 use tokio::task::JoinError;
 
@@ -90,7 +90,7 @@ pub async fn process_photo(bytes: Vec<u8>) -> Result<ProcessedAvatar, AvatarErro
 }
 
 pub async fn save_photo(
-    pool: &PgPool,
+    pool: &SqlitePool,
     user_id: i64,
     processed: ProcessedAvatar,
 ) -> Result<(), AvatarError> {
@@ -163,7 +163,7 @@ fn hex_encode(bytes: &[u8]) -> String {
 }
 
 pub async fn set_photo(
-    pool: &PgPool,
+    pool: &SqlitePool,
     user_id: i64,
     file_name: &str,
 ) -> Result<(), AvatarError> {
@@ -176,7 +176,7 @@ pub async fn set_photo(
 }
 
 pub async fn set_icon(
-    pool: &PgPool,
+    pool: &SqlitePool,
     user_id: i64,
     icon: &str,
     color: i64,
@@ -192,7 +192,7 @@ pub async fn set_icon(
     return Ok(());
 }
 
-pub async fn clear(pool: &PgPool, user_id: i64) -> Result<(), sqlx::Error> {
+pub async fn clear(pool: &SqlitePool, user_id: i64) -> Result<(), sqlx::Error> {
     sqlx::query(
         "UPDATE users SET avatar_path = NULL, avatar_icon = NULL, avatar_color = NULL WHERE id = $1",
     )

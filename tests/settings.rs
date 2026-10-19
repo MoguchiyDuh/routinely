@@ -13,7 +13,7 @@ use image::GenericImageView;
 use image::ImageFormat;
 use image::ImageReader;
 use serde_json::Value;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 
@@ -27,8 +27,7 @@ const BOUNDARY: &str = "testboundary";
 
 struct Server {
     addr: SocketAddr,
-    pool: PgPool,
-    kv: routinely::kv::Kv,
+    pool: SqlitePool,
 }
 
 #[derive(Debug)]
@@ -68,10 +67,8 @@ impl HttpResponse {
 async fn setup(_name: &str) -> Server {
     let config = common::config(SIGNUP_CODE, Duration::from_secs(600)).await;
     let pool = db::init(&config).await.unwrap();
-    let kv = common::kv(&config).await;
     let state = AppState {
         pool: pool.clone(),
-        kv: kv.clone(),
         config: config.clone(),
     };
     let router = routinely::app::build_router(state);
@@ -80,7 +77,7 @@ async fn setup(_name: &str) -> Server {
     tokio::spawn(async move {
         axum::serve(listener, router).await.unwrap();
     });
-    return Server { addr, pool, kv };
+    return Server { addr, pool };
 }
 
 async fn request(
@@ -280,8 +277,8 @@ async fn password_hash(server: &Server, user_id: i64) -> String {
 }
 
 async fn session_count(server: &Server, user_id: i64) -> i64 {
-    let count = server.kv.session_count(user_id).await.unwrap();
-    return i64::try_from(count).unwrap();
+    let count = routinely::auth::session::session_count(&server.pool, user_id).await.unwrap();
+    return count;
 }
 
 fn image_bytes(width: u32, height: u32, format: ImageFormat) -> Vec<u8> {
@@ -751,7 +748,7 @@ fn heatmap_level_boundaries() {
     assert_eq!(score::heatmap_level(4, 5), 3);
 }
 
-async fn seed_tick(pool: &PgPool, routine_id: i64, date: NaiveDate) -> i64 {
+async fn seed_tick(pool: &SqlitePool, routine_id: i64, date: NaiveDate) -> i64 {
     let (user_id,): (i64,) = sqlx::query_as("SELECT user_id FROM routines WHERE id = $1")
         .bind(routine_id)
         .fetch_one(pool)

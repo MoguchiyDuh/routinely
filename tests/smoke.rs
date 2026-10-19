@@ -4,13 +4,13 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use routinely::app::{self, AppState};
 use routinely::db;
 
-type Server = (SocketAddr, PgPool, PathBuf, tokio::task::JoinHandle<()>);
+type Server = (SocketAddr, SqlitePool, PathBuf, tokio::task::JoinHandle<()>);
 
 async fn setup(name: &str) -> Server {
     let unique = format!(
@@ -27,7 +27,6 @@ async fn setup(name: &str) -> Server {
     let pool = db::init(&config).await.unwrap();
     let state = AppState {
         pool: pool.clone(),
-        kv: common::kv(&config).await,
         config: config.clone(),
     };
     let router = app::build_router(state);
@@ -75,7 +74,7 @@ async fn migrations_and_healthz() {
 
     for table in ["users", "routines", "punishments"] {
         let (count,): (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = $1")
+            sqlx::query_as("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = $1")
                 .bind(table)
                 .fetch_one(&pool)
                 .await

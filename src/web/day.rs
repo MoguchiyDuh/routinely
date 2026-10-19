@@ -14,7 +14,7 @@ use chrono::Timelike;
 use chrono::Utc;
 use serde::Deserialize;
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 use crate::app::AppState;
 use crate::auth::extract::ApiAuth;
@@ -385,7 +385,7 @@ async fn api_day(
 }
 
 async fn build_routine_data(
-    pool: &PgPool,
+    pool: &SqlitePool,
     user_id: i64,
     date: NaiveDate,
     today: NaiveDate,
@@ -548,7 +548,7 @@ pub fn overlap_columns(spans: &[(i64, i64)]) -> Vec<(u32, u32)> {
 }
 
 pub(crate) async fn build_routines_section(
-    pool: &PgPool,
+    pool: &SqlitePool,
     user_id: i64,
     timezone: &str,
     date: NaiveDate,
@@ -573,7 +573,7 @@ pub(crate) async fn build_routines_section(
 }
 
 pub(crate) async fn build_todos_section(
-    pool: &PgPool,
+    pool: &SqlitePool,
     user_id: i64,
     timezone: &str,
     date: NaiveDate,
@@ -591,7 +591,7 @@ pub(crate) async fn build_todos_section(
 }
 
 async fn build_todo_lists(
-    pool: &PgPool,
+    pool: &SqlitePool,
     user_id: i64,
     timezone: &str,
 ) -> Result<TodoLists, WebError> {
@@ -641,7 +641,7 @@ async fn build_todo_lists(
 }
 
 async fn build_onboarding(
-    pool: &PgPool,
+    pool: &SqlitePool,
     user_id: i64,
 ) -> Result<Option<OnboardingVm>, WebError> {
     let flags = store::onboarding_flags(pool, user_id).await?;
@@ -685,7 +685,7 @@ async fn build_onboarding(
 }
 
 async fn load_pin(
-    pool: &PgPool,
+    pool: &SqlitePool,
     info: &store::DayRoutineInfo,
 ) -> Result<Option<PinVm>, WebError> {
     if !info.completed {

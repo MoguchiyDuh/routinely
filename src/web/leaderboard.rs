@@ -7,7 +7,7 @@ use axum::extract::State;
 use axum::routing::get;
 use chrono::NaiveDate;
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 use crate::app::AppState;
 use crate::auth::extract::ApiAuth;
@@ -255,7 +255,7 @@ async fn api_profile(
 }
 
 async fn build_profile(
-    pool: &PgPool,
+    pool: &SqlitePool,
     user_id: i64,
 ) -> Result<Option<ProfileData>, sqlx::Error> {
     let row: Option<(i64, String, String, String)> =
@@ -362,7 +362,7 @@ fn schedule_json(routine: &store::RoutineRow) -> ScheduleJson {
 }
 
 async fn punishment_counts(
-    pool: &PgPool,
+    pool: &SqlitePool,
     user_id: i64,
 ) -> Result<PunishmentCountsJson, sqlx::Error> {
     let rows: Vec<(String, i64)> = sqlx::query_as(
@@ -388,7 +388,7 @@ async fn punishment_counts(
     return Ok(counts);
 }
 
-async fn recent_pins(pool: &PgPool, user_id: i64) -> Result<Vec<ProfilePinJson>, sqlx::Error> {
+async fn recent_pins(pool: &SqlitePool, user_id: i64) -> Result<Vec<ProfilePinJson>, sqlx::Error> {
     let rows: Vec<(i64, i64, String, String)> = sqlx::query_as(
         "SELECT p.id, o.id, o.due_date, p.summary \
          FROM pins p \

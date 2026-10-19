@@ -7,7 +7,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     && cp target/release/routinely /usr/local/bin/routinely
 
 FROM debian:bookworm-slim
-RUN useradd --system --uid 10001 --home-dir /app routinely \
+RUN useradd --system --uid 1000 --home-dir /app routinely \
     && mkdir -p /app/data/uploads \
     && chown -R routinely:routinely /app
 WORKDIR /app

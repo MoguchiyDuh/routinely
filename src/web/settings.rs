@@ -144,7 +144,6 @@ async fn password_ssr(
         let token = session_token(&headers).ok_or(WebError::NotFound)?;
         match auth::change_password(
             &state.pool,
-            &state.kv,
             auth.id,
             &token,
             form.current_password.as_deref(),
@@ -169,7 +168,6 @@ async fn password_ssr(
                 return Err(match err {
                     PasswordChangeError::Hash(_) => WebError::Internal,
                     PasswordChangeError::Db(db) => WebError::Db(db),
-                    PasswordChangeError::Kv(kv) => WebError::Kv(kv),
                     PasswordChangeError::WrongCurrent | PasswordChangeError::InvalidNew => {
                         WebError::Internal
                     }
@@ -297,7 +295,6 @@ async fn api_password(
     let token = session_token(&headers).ok_or(WebError::NotFound)?;
     return match auth::change_password(
         &state.pool,
-        &state.kv,
         auth.id,
         &token,
         payload.current_password.as_deref(),
@@ -318,7 +315,6 @@ async fn api_password(
             .into_response()),
         Err(PasswordChangeError::Hash(_)) => Err(WebError::Internal),
         Err(PasswordChangeError::Db(err)) => Err(WebError::Db(err)),
-        Err(PasswordChangeError::Kv(err)) => Err(WebError::Kv(err)),
     };
 }
 

@@ -1,0 +1,11 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ROUTINELY_COOKIE_SECURE: "true"
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "127.0.0.1:8112:8080"

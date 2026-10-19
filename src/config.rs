@@ -18,9 +18,7 @@ pub enum ConfigError {
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub database_url: String,
-    pub valkey_url: String,
-    pub valkey_prefix: String,
+    pub database_path: String,
     pub bind: SocketAddr,
     pub signup_code: String,
     pub session_ttl: Duration,
@@ -29,11 +27,9 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> Result<Self, ConfigError> {
-        let database_url = required("ROUTINELY_DATABASE_URL")?;
-        let valkey_url = required("ROUTINELY_VALKEY_URL")?;
-        let valkey_prefix = match env::var("ROUTINELY_VALKEY_PREFIX") {
+        let database_path = match env::var("ROUTINELY_DATABASE_PATH") {
             Ok(value) => value,
-            Err(_) => "routinely:".to_string(),
+            Err(_) => "data/routinely.db".to_string(),
         };
         let bind = match env::var("ROUTINELY_BIND") {
             Ok(value) => match value.parse::<SocketAddr>() {
@@ -73,9 +69,7 @@ impl Config {
             Err(_) => false,
         };
         return Ok(Self {
-            database_url,
-            valkey_url,
-            valkey_prefix,
+            database_path,
             bind,
             signup_code,
             session_ttl,

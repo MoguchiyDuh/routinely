@@ -3,7 +3,7 @@ mod common;
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 
@@ -15,7 +15,7 @@ const PASSWORD: &str = "password123";
 
 struct Server {
     addr: SocketAddr,
-    pool: PgPool,
+    pool: SqlitePool,
 }
 
 #[derive(Debug)]
@@ -65,7 +65,6 @@ async fn setup(_name: &str) -> Server {
     let pool = db::init(&config).await.unwrap();
     let state = AppState {
         pool: pool.clone(),
-        kv: common::kv(&config).await,
         config: config.clone(),
     };
     let router = routinely::app::build_router(state);
@@ -154,7 +153,7 @@ async fn migration_adds_ui_columns_and_index() {
         ("users", "onboarding_dismissed_at"),
     ] {
         let (count,): (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM information_schema.columns WHERE table_name = $1 AND column_name = $2")
+            sqlx::query_as("SELECT COUNT(*) FROM pragma_table_info($1) WHERE name = $2")
                 .bind(table)
                 .bind(column)
                 .fetch_one(&server.pool)
@@ -163,7 +162,7 @@ async fn migration_adds_ui_columns_and_index() {
         assert_eq!(count, 1, "{table}.{column} missing");
     }
     let (indexes,): (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM pg_indexes WHERE indexname = $1")
+        sqlx::query_as("SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = $1")
             .bind("idx_routines_previous")
             .fetch_one(&server.pool)
             .await

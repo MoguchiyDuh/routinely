@@ -3,12 +3,10 @@ pub mod password;
 pub mod routes;
 pub mod session;
 
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use thiserror::Error;
 
 use crate::config::Config;
-use crate::kv::Kv;
-use crate::kv::KvError;
 use crate::punish;
 
 use self::password::PasswordError;
@@ -37,8 +35,6 @@ pub enum AuthError {
     Hash(#[from] PasswordError),
     #[error(transparent)]
     Db(#[from] sqlx::Error),
-    #[error(transparent)]
-    Kv(#[from] KvError),
 }
 
 #[derive(Debug, Error)]
@@ -51,12 +47,10 @@ pub enum PasswordChangeError {
     Hash(#[from] PasswordError),
     #[error(transparent)]
     Db(#[from] sqlx::Error),
-    #[error(transparent)]
-    Kv(#[from] KvError),
 }
 
 pub async fn perform_signup(
-    pool: &PgPool,
+    pool: &SqlitePool,
     config: &Config,
     username: Option<String>,
     password: Option<String>,
@@ -109,7 +103,7 @@ pub async fn perform_signup(
 }
 
 pub async fn perform_login(
-    pool: &PgPool,
+    pool: &SqlitePool,
     username: Option<String>,
     password: Option<String>,
 ) -> Result<session::SessionUser, AuthError> {
@@ -135,8 +129,7 @@ pub async fn perform_login(
 }
 
 pub async fn change_password(
-    pool: &PgPool,
-    kv: &Kv,
+    pool: &SqlitePool,
     user_id: i64,
     current_token: &str,
     current_password: Option<&str>,
@@ -161,12 +154,12 @@ pub async fn change_password(
         .bind(user_id)
         .execute(pool)
         .await?;
-    session::delete_other_sessions(kv, user_id, current_token).await?;
+    session::delete_other_sessions(pool, user_id, current_token).await?;
     return Ok(());
 }
 
 pub async fn sync_timezone(
-    pool: &PgPool,
+    pool: &SqlitePool,
     user: &mut session::SessionUser,
     raw: Option<&str>,
 ) -> Result<(), sqlx::Error> {

@@ -4,8 +4,8 @@ use chrono::Datelike;
 use chrono::NaiveDate;
 use chrono::Utc;
 use chrono_tz::Tz;
-use sqlx::PgPool;
-use sqlx::PgConnection;
+use sqlx::SqlitePool;
+use sqlx::SqliteConnection;
 
 use crate::recurrence::Schedule;
 use crate::recurrence::effective_end;
@@ -131,7 +131,7 @@ type RoutineWithUserRecord = (
 );
 
 pub async fn week_occurrences(
-    pool: &PgPool,
+    pool: &SqlitePool,
     start: NaiveDate,
     end: NaiveDate,
 ) -> Result<Vec<WeekOccurrenceRow>, sqlx::Error> {
@@ -185,7 +185,7 @@ pub async fn week_occurrences(
 }
 
 pub async fn active_routines_with_users(
-    pool: &PgPool,
+    pool: &SqlitePool,
 ) -> Result<Vec<RoutineWithUser>, sqlx::Error> {
     let rows: Vec<RoutineWithUserRecord> = sqlx::query_as(
         "SELECT r.id, r.user_id, r.title, r.notes, r.kind, r.weekdays_mask, r.period, r.per_period, \
@@ -251,7 +251,7 @@ type WeekTodoRecord = (
 type PinAttachmentRecord = (i64, String, Option<String>, Option<String>, Option<String>);
 
 pub async fn todos_with_deadline_between(
-    pool: &PgPool,
+    pool: &SqlitePool,
     from_utc: &str,
     until_utc_exclusive: &str,
 ) -> Result<Vec<WeekTodoRow>, sqlx::Error> {
@@ -284,7 +284,7 @@ pub async fn todos_with_deadline_between(
 
 type MemberRecord = (i64, String, Option<String>, Option<String>, Option<i64>);
 
-pub async fn list_members(pool: &PgPool) -> Result<Vec<MemberRow>, sqlx::Error> {
+pub async fn list_members(pool: &SqlitePool) -> Result<Vec<MemberRow>, sqlx::Error> {
     let rows: Vec<MemberRecord> = sqlx::query_as(
         "SELECT id, username, avatar_path, avatar_icon, avatar_color FROM users ORDER BY id",
     )
@@ -305,7 +305,7 @@ pub async fn list_members(pool: &PgPool) -> Result<Vec<MemberRow>, sqlx::Error> 
 }
 
 pub async fn period_completion_counts(
-    pool: &PgPool,
+    pool: &SqlitePool,
 ) -> Result<Vec<(i64, String, i64)>, sqlx::Error> {
     let rows: Vec<(i64, String, i64)> = sqlx::query_as(
         "SELECT o.routine_id, o.period_start, COUNT(*) \
@@ -319,7 +319,7 @@ pub async fn period_completion_counts(
 }
 
 pub async fn period_completion_dates(
-    pool: &PgPool,
+    pool: &SqlitePool,
 ) -> Result<Vec<(i64, String, String)>, sqlx::Error> {
     let rows: Vec<(i64, String, String)> = sqlx::query_as(
         "SELECT o.routine_id, o.period_start, o.due_date \
@@ -333,7 +333,7 @@ pub async fn period_completion_dates(
 }
 
 pub async fn period_done_dates(
-    pool: &PgPool,
+    pool: &SqlitePool,
     routine_id: i64,
     period_start: NaiveDate,
 ) -> Result<Vec<NaiveDate>, sqlx::Error> {
@@ -352,7 +352,7 @@ pub async fn period_done_dates(
 }
 
 pub async fn pins_for_occurrences(
-    pool: &PgPool,
+    pool: &SqlitePool,
     occurrence_ids: &[i64],
 ) -> Result<Vec<PinRow>, sqlx::Error> {
     if occurrence_ids.is_empty() {
@@ -531,7 +531,7 @@ fn routine_from_row(row: RoutineRecord) -> RoutineRow {
 }
 
 pub async fn routine_for_user(
-    pool: &PgPool,
+    pool: &SqlitePool,
     user_id: i64,
     routine_id: i64,
 ) -> Result<Option<RoutineRow>, sqlx::Error> {
@@ -547,7 +547,7 @@ pub async fn routine_for_user(
 }
 
 pub async fn active_routines(
-    conn: &mut PgConnection,
+    conn: &mut SqliteConnection,
     user_id: i64,
 ) -> Result<Vec<RoutineRow>, sqlx::Error> {
     let rows = sqlx::query_as::<_, RoutineRecord>(
@@ -560,7 +560,7 @@ pub async fn active_routines(
     return Ok(rows.into_iter().map(routine_from_row).collect());
 }
 
-pub async fn all_routines(pool: &PgPool, user_id: i64) -> Result<Vec<RoutineRow>, sqlx::Error> {
+pub async fn all_routines(pool: &SqlitePool, user_id: i64) -> Result<Vec<RoutineRow>, sqlx::Error> {
     let rows = sqlx::query_as::<_, RoutineRecord>(
         "SELECT id, user_id, title, notes, kind, weekdays_mask, period, per_period, iterations, start_date, end_date, time_of_day, time_end, archived_at \
          FROM routines WHERE user_id = $1 ORDER BY id",
@@ -572,7 +572,7 @@ pub async fn all_routines(pool: &PgPool, user_id: i64) -> Result<Vec<RoutineRow>
 }
 
 pub async fn create_routine(
-    pool: &PgPool,
+    pool: &SqlitePool,
     user_id: i64,
     spec: &RoutineSpec,
 ) -> Result<i64, sqlx::Error> {
@@ -609,7 +609,7 @@ pub async fn create_routine(
 }
 
 pub async fn archive_routine(
-    pool: &PgPool,
+    pool: &SqlitePool,
     user_id: i64,
     routine_id: i64,
 ) -> Result<bool, sqlx::Error> {
@@ -651,7 +651,7 @@ fn period_to_str(period: PeriodKind) -> &'static str {
     };
 }
 
-pub async fn is_chain_head(pool: &PgPool, routine_id: i64) -> Result<bool, sqlx::Error> {
+pub async fn is_chain_head(pool: &SqlitePool, routine_id: i64) -> Result<bool, sqlx::Error> {
     let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM routines WHERE previous_id = $1")
         .bind(routine_id)
         .fetch_one(pool)
@@ -660,7 +660,7 @@ pub async fn is_chain_head(pool: &PgPool, routine_id: i64) -> Result<bool, sqlx:
 }
 
 pub async fn routine_heads(
-    conn: &mut PgConnection,
+    conn: &mut SqliteConnection,
     user_id: i64,
 ) -> Result<Vec<RoutineRow>, sqlx::Error> {
     let rows = sqlx::query_as::<_, RoutineRecord>(
@@ -675,7 +675,7 @@ pub async fn routine_heads(
 }
 
 pub async fn archived_routine_heads(
-    pool: &PgPool,
+    pool: &SqlitePool,
     user_id: i64,
 ) -> Result<Vec<RoutineRow>, sqlx::Error> {
     let rows = sqlx::query_as::<_, RoutineRecord>(
@@ -689,7 +689,7 @@ pub async fn archived_routine_heads(
     return Ok(rows.into_iter().map(routine_from_row).collect());
 }
 
-pub async fn chain_child_ids(pool: &PgPool, user_id: i64) -> Result<Vec<i64>, sqlx::Error> {
+pub async fn chain_child_ids(pool: &SqlitePool, user_id: i64) -> Result<Vec<i64>, sqlx::Error> {
     let rows: Vec<(i64,)> = sqlx::query_as(
         "SELECT previous_id FROM routines WHERE previous_id IS NOT NULL AND user_id = $1",
     )
@@ -700,7 +700,7 @@ pub async fn chain_child_ids(pool: &PgPool, user_id: i64) -> Result<Vec<i64>, sq
 }
 
 pub async fn update_routine(
-    pool: &PgPool,
+    pool: &SqlitePool,
     user_id: i64,
     routine_id: i64,
     spec: &RoutineSpec,
@@ -899,7 +899,7 @@ pub async fn update_routine(
 }
 
 pub async fn materialize(
-    conn: &mut PgConnection,
+    conn: &mut SqliteConnection,
     user_id: i64,
     today: NaiveDate,
 ) -> Result<(), sqlx::Error> {
@@ -943,7 +943,7 @@ fn is_scheduled_on(schedule: &Schedule, date: NaiveDate) -> bool {
 }
 
 pub async fn find_or_create_occurrence(
-    pool: &PgPool,
+    pool: &SqlitePool,
     routine: &RoutineRow,
     day: NaiveDate,
 ) -> Result<i64, sqlx::Error> {
@@ -974,7 +974,7 @@ pub async fn find_or_create_occurrence(
 }
 
 pub async fn tick(
-    pool: &PgPool,
+    pool: &SqlitePool,
     routine: &RoutineRow,
     day: NaiveDate,
     evidence_note: Option<&str>,
@@ -991,7 +991,7 @@ pub async fn tick(
     return Ok(occurrence_id);
 }
 
-pub async fn untick(pool: &PgPool, routine_id: i64, day: NaiveDate) -> Result<(), sqlx::Error> {
+pub async fn untick(pool: &SqlitePool, routine_id: i64, day: NaiveDate) -> Result<(), sqlx::Error> {
     sqlx::query(
         "DELETE FROM completions WHERE occurrence_id IN (SELECT id FROM occurrences WHERE routine_id = $1 AND due_date = $2)",
     )
@@ -1003,7 +1003,7 @@ pub async fn untick(pool: &PgPool, routine_id: i64, day: NaiveDate) -> Result<()
 }
 
 pub async fn day_routines(
-    pool: &PgPool,
+    pool: &SqlitePool,
     user_id: i64,
     date: NaiveDate,
     today: NaiveDate,
@@ -1075,7 +1075,7 @@ pub async fn day_routines(
 }
 
 pub async fn occurrence_owned(
-    pool: &PgPool,
+    pool: &SqlitePool,
     user_id: i64,
     occurrence_id: i64,
 ) -> Result<bool, sqlx::Error> {
@@ -1091,7 +1091,7 @@ pub async fn occurrence_owned(
 }
 
 pub async fn completion_id_for_occurrence(
-    pool: &PgPool,
+    pool: &SqlitePool,
     occurrence_id: i64,
 ) -> Result<Option<i64>, sqlx::Error> {
     let row: Option<(i64,)> = sqlx::query_as("SELECT id FROM completions WHERE occurrence_id = $1")
@@ -1102,7 +1102,7 @@ pub async fn completion_id_for_occurrence(
 }
 
 pub async fn upsert_pin(
-    pool: &PgPool,
+    pool: &SqlitePool,
     completion_id: i64,
     summary: &str,
 ) -> Result<i64, sqlx::Error> {
@@ -1123,7 +1123,7 @@ pub async fn upsert_pin(
 }
 
 pub async fn add_link_attachment(
-    pool: &PgPool,
+    pool: &SqlitePool,
     pin_id: i64,
     url: &str,
 ) -> Result<(), sqlx::Error> {
@@ -1139,7 +1139,7 @@ pub async fn add_link_attachment(
 }
 
 pub async fn add_photo_attachment(
-    pool: &PgPool,
+    pool: &SqlitePool,
     pin_id: i64,
     file_path: &str,
 ) -> Result<(), sqlx::Error> {
@@ -1155,7 +1155,7 @@ pub async fn add_photo_attachment(
 }
 
 pub async fn pin_for_occurrence(
-    pool: &PgPool,
+    pool: &SqlitePool,
     occurrence_id: i64,
 ) -> Result<Option<PinInfo>, sqlx::Error> {
     let pin: Option<(i64, String)> = sqlx::query_as(
@@ -1192,7 +1192,7 @@ pub async fn pin_for_occurrence(
 }
 
 pub async fn create_todo(
-    pool: &PgPool,
+    pool: &SqlitePool,
     user_id: i64,
     title: &str,
     notes: Option<&str>,
@@ -1216,7 +1216,7 @@ pub async fn create_todo(
 }
 
 pub async fn list_todos(
-    pool: &PgPool,
+    pool: &SqlitePool,
     user_id: i64,
     now: &str,
 ) -> Result<Vec<TodoRow>, sqlx::Error> {
@@ -1250,7 +1250,7 @@ pub async fn list_todos(
         .collect());
 }
 
-pub async fn has_any_routine(pool: &PgPool, user_id: i64) -> Result<bool, sqlx::Error> {
+pub async fn has_any_routine(pool: &SqlitePool, user_id: i64) -> Result<bool, sqlx::Error> {
     let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM routines WHERE user_id = $1")
         .bind(user_id)
         .fetch_one(pool)
@@ -1259,7 +1259,7 @@ pub async fn has_any_routine(pool: &PgPool, user_id: i64) -> Result<bool, sqlx::
 }
 
 pub async fn onboarding_flags(
-    pool: &PgPool,
+    pool: &SqlitePool,
     user_id: i64,
 ) -> Result<OnboardingFlags, sqlx::Error> {
     let (routine_count,): (i64,) =
@@ -1302,7 +1302,7 @@ pub async fn onboarding_flags(
     });
 }
 
-pub async fn dismiss_onboarding(pool: &PgPool, user_id: i64) -> Result<(), sqlx::Error> {
+pub async fn dismiss_onboarding(pool: &SqlitePool, user_id: i64) -> Result<(), sqlx::Error> {
     sqlx::query("UPDATE users SET onboarding_dismissed_at = $1 WHERE id = $2")
         .bind(Utc::now().to_rfc3339())
         .bind(user_id)
@@ -1312,7 +1312,7 @@ pub async fn dismiss_onboarding(pool: &PgPool, user_id: i64) -> Result<(), sqlx:
 }
 
 pub async fn toggle_todo(
-    pool: &PgPool,
+    pool: &SqlitePool,
     user_id: i64,
     todo_id: i64,
 ) -> Result<bool, sqlx::Error> {
@@ -1327,7 +1327,7 @@ pub async fn toggle_todo(
 }
 
 pub async fn delete_todo(
-    pool: &PgPool,
+    pool: &SqlitePool,
     user_id: i64,
     todo_id: i64,
 ) -> Result<bool, sqlx::Error> {
@@ -1340,7 +1340,7 @@ pub async fn delete_todo(
 }
 
 pub async fn upsert_note(
-    pool: &PgPool,
+    pool: &SqlitePool,
     user_id: i64,
     day: NaiveDate,
     body: &str,
@@ -1359,7 +1359,7 @@ pub async fn upsert_note(
 }
 
 pub async fn get_note(
-    pool: &PgPool,
+    pool: &SqlitePool,
     user_id: i64,
     day: NaiveDate,
 ) -> Result<Option<String>, sqlx::Error> {
@@ -1377,7 +1377,7 @@ const JOURNAL_LIMIT: i64 = 1000;
 pub type JournalPinRecord = (String, i64, i64, String, String);
 
 pub async fn journal_notes(
-    pool: &PgPool,
+    pool: &SqlitePool,
     user_id: i64,
     from: Option<NaiveDate>,
     to: Option<NaiveDate>,
@@ -1403,7 +1403,7 @@ pub async fn journal_notes(
 }
 
 pub async fn journal_pins(
-    pool: &PgPool,
+    pool: &SqlitePool,
     user_id: i64,
     from: Option<NaiveDate>,
     to: Option<NaiveDate>,
