@@ -2,11 +2,12 @@ use askama::Template;
 use axum::Router;
 use axum::extract::Form;
 use axum::extract::Path;
+use axum::extract::Query;
 use axum::extract::State;
 use axum::response::IntoResponse;
+use axum::response::Redirect;
 use axum::routing::get;
 use axum::routing::post;
-use axum::routing::put;
 use chrono::NaiveDate;
 use chrono::NaiveTime;
 use chrono::Weekday;
@@ -27,7 +28,9 @@ use super::WebResult;
 use super::html;
 use super::notifications::RemindersVm;
 use super::notifications::reminder_error_message;
+use super::shell::AvatarVm;
 use super::shell::Shell;
+use super::week::PickerVm;
 
 const ROUTINE_TIME_SOURCE: &str = "routine-time-of-day";
 
@@ -35,6 +38,8 @@ const ROUTINE_TIME_SOURCE: &str = "routine-time-of-day";
 #[template(path = "routines.html")]
 pub struct RoutinesPage {
     pub shell: Shell,
+    picker: PickerVm,
+    readonly: bool,
     active: Vec<RoutineCardVm>,
     finished: Vec<RoutineCardVm>,
     archived: Vec<RoutineCardVm>,
@@ -45,6 +50,57 @@ pub struct RoutineCardVm {
     pub title: String,
     pub schedule: String,
     pub pct_30d: Option<String>,
+}
+
+#[derive(Template)]
+#[template(path = "routine_view.html")]
+pub struct RoutineViewPage {
+    pub shell: Shell,
+    owner_id: i64,
+    owner_name: String,
+    owner_avatar: AvatarVm,
+    id: i64,
+    title: String,
+    notes: Option<String>,
+    schedule: String,
+    time_window: String,
+    start_date: String,
+    duration: String,
+    finished: bool,
+    archived: bool,
+    can_edit: bool,
+    edit_id: i64,
+    back_href: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct RoutinesQuery {
+    who: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct NewRoutineQuery {
+    from: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+struct RoutineJson {
+    id: i64,
+    user_id: i64,
+    username: String,
+    title: String,
+    notes: Option<String>,
+    kind: String,
+    weekdays: Option<Vec<u8>>,
+    period: Option<&'static str>,
+    per_period: Option<u32>,
+    iterations: Option<u32>,
+    start_date: Option<NaiveDate>,
+    end_date: Option<NaiveDate>,
+    time_of_day: Option<String>,
+    time_end: Option<String>,
+    archived: bool,
+    finished: bool,
 }
 
 #[derive(Template)]
@@ -229,12 +285,18 @@ pub fn router() -> Router<AppState> {
         .route("/routines", get(routines_page).post(create_routine_ssr))
         .route("/routines/new", get(new_routine_page))
         .route("/routines/{id}/edit", get(edit_routine_page))
-        .route("/routines/{id}", post(update_routine_ssr))
+        .route(
+            "/routines/{id}",
+            get(routine_view_page).post(update_routine_ssr),
+        )
         .route("/routines/{id}/archive", post(archive_ssr))
         .route("/routines/{id}/restore", post(restore_ssr))
         .route("/routines/{id}/delete", post(delete_ssr))
         .route("/api/v1/routines", post(api_create_routine))
-        .route("/api/v1/routines/{id}", put(api_update_routine))
+        .route(
+            "/api/v1/routines/{id}",
+            get(api_get_routine).put(api_update_routine),
+        )
         .route("/api/v1/routines/{id}/archive", post(api_archive))
         .route("/api/v1/routines/{id}/restore", post(api_restore))
         .route("/api/v1/routines/{id}/delete", post(api_delete));
@@ -243,15 +305,36 @@ pub fn router() -> Router<AppState> {
 async fn routines_page(
     PageAuth(auth): PageAuth,
     State(state): State<AppState>,
+    Query(query): Query<RoutinesQuery>,
     headers: axum::http::HeaderMap,
 ) -> WebResult {
     let shell = Shell::load(&state, &auth, "routines", &headers).await?;
+    let members = store::list_members(&state.pool).await?;
+    let target = query.who.unwrap_or(auth.id);
+    if !members.iter().any(|member| member.id == target) {
+        return Err(WebError::NotFound);
+    }
+    let readonly = target != auth.id;
+    let picker = super::week::build_picker_with(
+        "/routines",
+        auth.id,
+        Some(target),
+        &members,
+        "routines",
+        |who| match who {
+            Some(id) => format!("who={id}"),
+            None => String::new(),
+        },
+    );
     let mut conn = state.pool.acquire().await?;
-    let heads = store::routine_heads(&mut conn, auth.id).await?;
+    let heads = store::routine_heads(&mut conn, target).await?;
     drop(conn);
-    let archived_rows = store::archived_routine_heads(&state.pool, auth.id).await?;
     let today = store::user_today(&auth.timezone);
-    let pcts = score::routine_window_pcts(&state.pool, auth.id, &auth.timezone, &heads).await?;
+    let pcts = if readonly {
+        vec![None; heads.len()]
+    } else {
+        score::routine_window_pcts(&state.pool, auth.id, &auth.timezone, &heads).await?
+    };
     let mut active = Vec::new();
     let mut finished = Vec::new();
     for (routine, pct) in heads.iter().zip(pcts) {
@@ -276,28 +359,139 @@ async fn routines_page(
         }
     }
     let mut archived = Vec::new();
-    for routine in &archived_rows {
-        let Some(schedule) = store::schedule_from_row(routine) else {
-            continue;
-        };
-        archived.push(RoutineCardVm {
-            id: routine.id,
-            title: routine.title.clone(),
-            schedule: score::describe_schedule(
-                &schedule,
-                routine.time_of_day.as_deref(),
-                routine.time_end.as_deref(),
-                today,
-            ),
-            pct_30d: None,
-        });
+    if !readonly {
+        let archived_rows = store::archived_routine_heads(&state.pool, auth.id).await?;
+        for routine in &archived_rows {
+            let Some(schedule) = store::schedule_from_row(routine) else {
+                continue;
+            };
+            archived.push(RoutineCardVm {
+                id: routine.id,
+                title: routine.title.clone(),
+                schedule: score::describe_schedule(
+                    &schedule,
+                    routine.time_of_day.as_deref(),
+                    routine.time_end.as_deref(),
+                    today,
+                ),
+                pct_30d: None,
+            });
+        }
     }
     return Ok(html(&RoutinesPage {
         shell,
+        picker,
+        readonly,
         active,
         finished,
         archived,
     })?);
+}
+
+async fn routine_view_page(
+    PageAuth(auth): PageAuth,
+    State(state): State<AppState>,
+    Path(routine_id): Path<i64>,
+    headers: axum::http::HeaderMap,
+) -> WebResult {
+    let Some(visible) = store::routine_visible_to(&state.pool, auth.id, routine_id).await? else {
+        return Err(WebError::NotFound);
+    };
+    let shell = Shell::load(&state, &auth, "routines", &headers).await?;
+    let routine = &visible.routine;
+    let Some(schedule) = store::schedule_from_row(routine) else {
+        return Err(WebError::NotFound);
+    };
+    let today = store::user_today(&auth.timezone);
+    let owner_avatar = AvatarVm::load(&state.pool, routine.user_id).await?;
+    let own = routine.user_id == auth.id;
+    let duration = match (routine.iterations, routine.end_date) {
+        (Some(weeks), _) => format!("{weeks} {}", if weeks == 1 { "week" } else { "weeks" }),
+        (None, Some(end)) => format!("Until {end}"),
+        (None, None) => "Forever".to_string(),
+    };
+    let time_window = match (routine.time_of_day.as_deref(), routine.time_end.as_deref()) {
+        (Some(start), Some(end)) => format!("{start} \u{2013} {end}"),
+        (Some(start), None) => start.to_string(),
+        (None, _) => "All day".to_string(),
+    };
+    let page = RoutineViewPage {
+        shell,
+        owner_id: routine.user_id,
+        owner_name: visible.username.clone(),
+        owner_avatar,
+        id: routine.id,
+        title: routine.title.clone(),
+        notes: routine
+            .notes
+            .clone()
+            .filter(|notes| !notes.trim().is_empty()),
+        schedule: score::describe_schedule(
+            &schedule,
+            routine.time_of_day.as_deref(),
+            routine.time_end.as_deref(),
+            today,
+        ),
+        time_window,
+        start_date: schedule.start_date.to_string(),
+        duration,
+        finished: is_finished_on(&schedule, today),
+        archived: visible.archived,
+        can_edit: own && !visible.archived,
+        edit_id: visible.head_id,
+        back_href: if own {
+            "/routines".to_string()
+        } else {
+            format!("/routines?who={}", routine.user_id)
+        },
+    };
+    return Ok(html(&page)?);
+}
+
+async fn api_get_routine(
+    ApiAuth(auth): ApiAuth,
+    State(state): State<AppState>,
+    Path(routine_id): Path<i64>,
+) -> Result<axum::Json<RoutineJson>, WebError> {
+    let Some(visible) = store::routine_visible_to(&state.pool, auth.id, routine_id).await? else {
+        return Err(WebError::NotFound);
+    };
+    let routine = visible.routine;
+    let today = store::user_today(&auth.timezone);
+    let finished = store::schedule_from_row(&routine)
+        .map(|schedule| is_finished_on(&schedule, today))
+        .unwrap_or(false);
+    let weekdays = routine.weekdays_mask.map(|mask| {
+        return (0u8..7)
+            .filter(|index| {
+                weekday_from_index(*index).is_some_and(|day| mask_contains(mask, day))
+            })
+            .collect::<Vec<u8>>();
+    });
+    let period = routine.period.map(|value| match value {
+        store::PeriodKind::Day => "day",
+        store::PeriodKind::Week => "week",
+        store::PeriodKind::Month => "month",
+        store::PeriodKind::Year => "year",
+    });
+    return Ok(axum::Json(RoutineJson {
+        id: routine.id,
+        user_id: routine.user_id,
+        username: visible.username,
+        title: routine.title,
+        notes: routine.notes,
+        kind: routine.kind,
+        weekdays,
+        period,
+        per_period: routine.per_period,
+        iterations: routine.iterations,
+        start_date: routine.start_date,
+        end_date: routine.end_date,
+        time_of_day: routine.time_of_day,
+        time_end: routine.time_end,
+        archived: visible.archived,
+        finished,
+    }));
 }
 
 fn pct_label(value: f64) -> String {
@@ -307,14 +501,34 @@ fn pct_label(value: f64) -> String {
 async fn new_routine_page(
     PageAuth(auth): PageAuth,
     State(state): State<AppState>,
+    Query(query): Query<NewRoutineQuery>,
     headers: axum::http::HeaderMap,
 ) -> WebResult {
-    let shell = Shell::load(&state, &auth, "routines", &headers).await?;
     let prefs = crate::notify::get_prefs(&state.pool, auth.id).await?;
     let mut form = RoutineFormVm::empty("/routines".to_string());
+    let mut timed = false;
+    if let Some(from) = query.from {
+        let Some(visible) = store::routine_visible_to(&state.pool, auth.id, from).await? else {
+            return Err(WebError::NotFound);
+        };
+        let row = visible.routine;
+        form = form_from_row(&row, "/routines".to_string());
+        form.submit_label = "Create routine";
+        form.cancel = false;
+        form.show_start = true;
+        let today = store::user_today(&auth.timezone);
+        if row.end_date.is_some_and(|end| end < today) {
+            form.duration_end_date = false;
+            form.duration_iterations = false;
+            form.duration_forever = true;
+            form.end_date = String::new();
+        }
+        timed = row.time_of_day.is_some();
+    }
+    let shell = Shell::load(&state, &auth, "routines", &headers).await?;
     form.reminders = RemindersVm::new(
-        &store::default_reminder_specs(&prefs, "routine", false),
-        false,
+        &store::default_reminder_specs(&prefs, "routine", timed),
+        timed,
         ROUTINE_TIME_SOURCE,
     )
     .with_defaults(&prefs, "routine");
@@ -375,8 +589,12 @@ async fn edit_routine_page(
     let Some(row) = store::routine_for_user(&state.pool, auth.id, routine_id).await? else {
         return Err(WebError::NotFound);
     };
-    if row.archived_at.is_some() || !store::is_chain_head(&state.pool, routine_id).await? {
+    if row.archived_at.is_some() {
         return Err(WebError::Conflict);
+    }
+    let head_id = store::chain_head_id(&state.pool, routine_id).await?;
+    if head_id != routine_id {
+        return Ok(Redirect::to(&format!("/routines/{head_id}/edit")).into_response());
     }
     let mut form = form_from_row(&row, format!("/routines/{routine_id}"));
     let stored = store::list_reminders_for(&state.pool, auth.id, "routine", &[routine_id]).await?;

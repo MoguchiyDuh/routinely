@@ -1026,7 +1026,7 @@ async fn ssr_pages_and_api_update_mirror() {
     .await;
     assert_eq!(foreign_edit.status, 404);
     let old_edit = get_page(&server, &format!("/routines/{routine_id}/edit"), &token).await;
-    assert_eq!(old_edit.status, 409, "edit page for non-head must 409");
+    assert_eq!(old_edit.status, 303, "edit page for non-head must redirect to head");
 }
 
 #[tokio::test]

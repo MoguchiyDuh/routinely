@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}{{ title }}{% endblock %}
+{% block pagetitle %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page page-narrow">
+<a class="btn btn-sm btn-secondary" href="{{ back_href }}">{{ ui::ico("chevron-left") }}Back to routines</a>
+<header class="page-head">
+<div class="routine-view-head">
+<a class="routine-owner" href="/users/{{ owner_id }}">{{ ui::avatar(&owner_avatar, "sm") }}<span>{{ owner_name }}</span></a>
+<h1>{{ title }}</h1>
+</div>
+</header>
+<div class="card routine-view">
+<p class="routine-view-badges">{% if finished %}<span class="pill pill-done">Finished</span>{% endif %}{% if archived %}<span class="pill pill-planned">Archived</span>{% endif %}</p>
+{% if let Some(n) = notes %}<p class="routine-view-notes">{{ n }}</p>{% endif %}
+<dl class="routine-view-meta">
+<div><dt>Schedule</dt><dd>{{ schedule }}</dd></div>
+<div><dt>Time</dt><dd class="tnum">{{ time_window }}</dd></div>
+<div><dt>Starts</dt><dd class="tnum">{{ start_date }}</dd></div>
+<div><dt>Duration</dt><dd>{{ duration }}</dd></div>
+</dl>
+<div class="routine-actions">
+{% if can_edit %}<a class="btn btn-sm" href="/routines/{{ edit_id }}/edit">{{ ui::ico("pencil") }}Edit</a>{% endif %}
+<a class="btn btn-sm btn-primary" href="/routines/new?from={{ id }}">{{ ui::ico("plus") }}Copy routine</a>
+</div>
+</div>
+</div>
+{% endblock %}

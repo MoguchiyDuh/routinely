@@ -105,6 +105,7 @@ pub(crate) struct ChipVm {
 pub(crate) struct PickerVm {
     pub current: ChipVm,
     pub chips: Vec<ChipVm>,
+    pub noun: &'static str,
 }
 
 pub(crate) fn build_picker(
@@ -114,7 +115,7 @@ pub(crate) fn build_picker(
     date: NaiveDate,
     members: &[store::MemberRow],
 ) -> PickerVm {
-    return build_picker_with(base, me, selected, members, |who| match who {
+    return build_picker_with(base, me, selected, members, "calendar", |who| match who {
         Some(id) if id == me => format!("date={date}"),
         Some(id) => format!("date={date}&who={id}"),
         None => format!("date={date}&who=all"),
@@ -126,6 +127,7 @@ pub(crate) fn build_picker_with(
     me: i64,
     selected: Option<i64>,
     members: &[store::MemberRow],
+    noun: &'static str,
     query_for: impl Fn(Option<i64>) -> String,
 ) -> PickerVm {
     let avatar_of = |member: &store::MemberRow| {
@@ -172,7 +174,11 @@ pub(crate) fn build_picker_with(
             active: true,
             avatar: None,
         });
-    return PickerVm { current, chips };
+    return PickerVm {
+        current,
+        chips,
+        noun,
+    };
 }
 
 #[derive(Clone)]
@@ -781,7 +787,7 @@ fn build_day_vm(
                     href: if e.user_id == me {
                         format!("/routines/{}/edit", e.routine_id)
                     } else {
-                        day_href(date, e.user_id, me)
+                        format!("/routines/{}", e.routine_id)
                     },
                     routine_id: Some(e.routine_id),
                     todo_id: None,
@@ -822,7 +828,7 @@ fn build_day_vm(
                     href: if p.user_id == me {
                         format!("/routines/{}/edit", p.routine_id)
                     } else {
-                        day_href(date, p.user_id, me)
+                        format!("/routines/{}", p.routine_id)
                     },
                     routine_id: None,
                     todo_id: None,
@@ -1265,10 +1271,7 @@ fn goal_bars(
                 href: if holder.routine.user_id == me {
                     format!("/routines/{}/edit", holder.routine.id)
                 } else {
-                    format!(
-                        "/week?date={}&who={}",
-                        period.period_start, holder.routine.user_id
-                    )
+                    format!("/routines/{}", holder.routine.id)
                 },
                 title: if all_mode {
                     format!("{} \u{b7} {}", holder.routine.title, holder.username)

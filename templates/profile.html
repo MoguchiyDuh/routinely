@@ -30,18 +30,21 @@
 <p class="hint heatmap-legend">Last 12 weeks, oldest first. Darker means more routines completed.</p>
 </section>
 <section class="card">
+<div class="label-row">
 <h2>Routines</h2>
+<a class="link-btn" href="{% if is_self %}/routines{% else %}/routines?who={{ user_id }}{% endif %}">View all</a>
+</div>
 {% if routines.is_empty() %}
 <div class="empty">
 <svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ crate::ASSET_VERSION }}#repeat"/></svg>
 <p>No active routines yet.</p>
-<a class="btn btn-primary" href="/routines/new">New routine</a>
+{% if is_self %}<a class="btn btn-primary" href="/routines/new">New routine</a>{% endif %}
 </div>
 {% else %}
 <ul class="profile-routines">
 {% for routine in routines %}
 <li>
-<span class="routine-title">{{ routine.title }}</span>
+<a class="routine-title" href="/routines/{{ routine.id }}">{{ routine.title }}</a>
 <span class="sched">{{ routine.description }}</span>
 </li>
 {% endfor %}
@@ -58,7 +61,7 @@
 {% else %}
 <div class="pin-grid">
 {% for pin in pins %}
-<a class="pin-card" href="/day?date={{ pin.due_date }}">
+<a class="pin-card" href="/day?date={{ pin.due_date }}{% if !is_self %}&who={{ user_id }}{% endif %}">
 {% match pin.photos.first() %}
 {% when Some with (url) %}
 <img src="{{ url }}" alt="">

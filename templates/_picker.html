@@ -1,7 +1,7 @@
 {% import "_macros.html" as ui %}
 <div class="picker-row">
 <details class="picker">
-<summary class="picker-button" aria-label="Whose calendar: {{ picker.current.label }}">{% if let Some(a) = picker.current.avatar %}{{ ui::avatar(&a, "sm") }}{% endif %}<span class="picker-label">{% if picker.current.label == "Me" %}My calendar{% else %}{{ picker.current.label }}'s calendar{% endif %}</span>{{ ui::ico("chevron-down") }}</summary>
+<summary class="picker-button" aria-label="Whose {{ picker.noun }}: {{ picker.current.label }}">{% if let Some(a) = picker.current.avatar %}{{ ui::avatar(&a, "sm") }}{% endif %}<span class="picker-label">{% if picker.current.label == "Me" %}My {{ picker.noun }}{% else %}{{ picker.current.label }}'s {{ picker.noun }}{% endif %}</span>{{ ui::ico("chevron-down") }}</summary>
 <ul class="picker-list">
 {% for c in picker.chips %}
 <li><a class="picker-item{% if c.active %} is-active{% endif %}" href="{{ c.href }}"{% if c.active %} aria-current="true"{% endif %}>{% if let Some(a) = c.avatar %}{{ ui::avatar(&a, "sm") }}{% endif %}<span>{{ c.label }}</span>{% if c.active %}{{ ui::ico("check") }}{% endif %}</a></li>
@@ -9,6 +9,6 @@
 </ul>
 </details>
 {% if picker.current.label != "Me" %}
-<p class="readonly-note">{{ ui::ico("eye") }}Viewing {% if picker.current.label == "Everyone" %}everyone{% else %}{{ picker.current.label }}&rsquo;s calendar{% endif %}, read-only. <a href="{{ picker.chips[0].href }}">Back to mine</a></p>
+<p class="readonly-note">{{ ui::ico("eye") }}Viewing {% if picker.current.label == "Everyone" %}everyone{% else %}{{ picker.current.label }}&rsquo;s {{ picker.noun }}{% endif %}, read-only. <a href="{{ picker.chips[0].href }}">Back to mine</a></p>
 {% endif %}
 </div>

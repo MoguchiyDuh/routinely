@@ -559,6 +559,71 @@ pub async fn routine_for_user(
     return Ok(row.map(routine_from_row));
 }
 
+pub async fn routine_by_id(
+    pool: &SqlitePool,
+    routine_id: i64,
+) -> Result<Option<RoutineRow>, sqlx::Error> {
+    let row = sqlx::query_as::<_, RoutineRecord>(
+        "SELECT id, user_id, title, notes, kind, weekdays_mask, period, per_period, iterations, start_date, end_date, time_of_day, time_end, archived_at \
+         FROM routines WHERE id = $1",
+    )
+    .bind(routine_id)
+    .fetch_optional(pool)
+    .await?;
+    return Ok(row.map(routine_from_row));
+}
+
+pub async fn chain_head_id(pool: &SqlitePool, routine_id: i64) -> Result<i64, sqlx::Error> {
+    let mut current = routine_id;
+    loop {
+        let next: Option<(i64,)> =
+            sqlx::query_as("SELECT id FROM routines WHERE previous_id = $1 ORDER BY id LIMIT 1")
+                .bind(current)
+                .fetch_optional(pool)
+                .await?;
+        match next {
+            Some((id,)) => current = id,
+            None => return Ok(current),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct VisibleRoutine {
+    pub routine: RoutineRow,
+    pub username: String,
+    pub head_id: i64,
+    pub archived: bool,
+}
+
+pub async fn routine_visible_to(
+    pool: &SqlitePool,
+    viewer_id: i64,
+    routine_id: i64,
+) -> Result<Option<VisibleRoutine>, sqlx::Error> {
+    let head_id = chain_head_id(pool, routine_id).await?;
+    let Some(routine) = routine_by_id(pool, head_id).await? else {
+        return Ok(None);
+    };
+    let archived = routine.archived_at.is_some();
+    if archived && routine.user_id != viewer_id {
+        return Ok(None);
+    }
+    let owner: Option<(String,)> = sqlx::query_as("SELECT username FROM users WHERE id = $1")
+        .bind(routine.user_id)
+        .fetch_optional(pool)
+        .await?;
+    let Some((username,)) = owner else {
+        return Ok(None);
+    };
+    return Ok(Some(VisibleRoutine {
+        routine,
+        username,
+        head_id,
+        archived,
+    }));
+}
+
 pub async fn active_routines(
     conn: &mut SqliteConnection,
     user_id: i64,

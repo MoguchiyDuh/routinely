@@ -9,7 +9,7 @@
 {{ ui::tick(b.id, date, b.title) }}
 {% endif %}
 <div class="task-main">
-{% if readonly %}<span class="task-title">{{ b.title }}</span>{% else %}<a class="task-title" href="/routines/{{ b.id }}/edit" title="Edit routine">{{ b.title }}</a>{% endif %}
+{% if readonly %}<a class="task-title" href="/routines/{{ b.id }}" title="View routine">{{ b.title }}</a>{% else %}<a class="task-title" href="/routines/{{ b.id }}/edit" title="Edit routine">{{ b.title }}</a>{% endif %}
 <p class="task-sub tnum">{{ b.time_label }}</p>
 {{ ui::pin_view(b.pin) }}
 </div>

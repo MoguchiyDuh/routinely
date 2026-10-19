@@ -275,6 +275,7 @@ async fn journal_view(
         auth.id,
         Some(target),
         &members,
+        "journal",
         |who| {
             let mut pairs: Vec<(&str, String)> = vec![("range", range.to_string())];
             if range == "custom" {

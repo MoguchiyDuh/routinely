@@ -8,7 +8,7 @@
 {{ ui::tick(r.id, date, r.title) }}
 {% endif %}
 <div class="task-main">
-{% if readonly %}<span class="task-title">{{ r.title }}</span>{% else %}<a class="task-title" href="/routines/{{ r.id }}/edit" title="Edit routine">{{ r.title }}</a>{% endif %}
+{% if readonly %}<a class="task-title" href="/routines/{{ r.id }}" title="View routine">{{ r.title }}</a>{% else %}<a class="task-title" href="/routines/{{ r.id }}/edit" title="Edit routine">{{ r.title }}</a>{% endif %}
 {% if let Some(done) = r.period_done %}
 {% if let Some(required) = r.period_required %}
 {% if let Some(name) = r.period_name %}
