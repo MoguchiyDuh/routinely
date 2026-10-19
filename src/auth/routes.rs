@@ -270,9 +270,7 @@ async fn signup(
 
 fn error_status(err: &AuthError) -> StatusCode {
     return match err {
-        AuthError::Hash(_) | AuthError::Db(_) => {
-            StatusCode::INTERNAL_SERVER_ERROR
-        }
+        AuthError::Hash(_) | AuthError::Db(_) => StatusCode::INTERNAL_SERVER_ERROR,
         _ => StatusCode::OK,
     };
 }
@@ -311,9 +309,7 @@ fn api_error_response(err: &AuthError) -> Response {
         AuthError::InvalidPassword => (StatusCode::UNPROCESSABLE_ENTITY, "invalid_password"),
         AuthError::InvalidTimezone => (StatusCode::UNPROCESSABLE_ENTITY, "invalid_timezone"),
         AuthError::InvalidCredentials => (StatusCode::UNAUTHORIZED, "invalid_credentials"),
-        AuthError::Hash(_) | AuthError::Db(_) => {
-            (StatusCode::INTERNAL_SERVER_ERROR, "internal")
-        }
+        AuthError::Hash(_) | AuthError::Db(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
     };
     return (status, Json(serde_json::json!({ "error": code }))).into_response();
 }

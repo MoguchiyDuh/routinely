@@ -463,9 +463,7 @@ async fn api_get_routine(
         .unwrap_or(false);
     let weekdays = routine.weekdays_mask.map(|mask| {
         return (0u8..7)
-            .filter(|index| {
-                weekday_from_index(*index).is_some_and(|day| mask_contains(mask, day))
-            })
+            .filter(|index| weekday_from_index(*index).is_some_and(|day| mask_contains(mask, day)))
             .collect::<Vec<u8>>();
     });
     let period = routine.period.map(|value| match value {
@@ -598,7 +596,8 @@ async fn edit_routine_page(
     }
     let mut form = form_from_row(&row, format!("/routines/{routine_id}"));
     let stored = store::list_reminders_for(&state.pool, auth.id, "routine", &[routine_id]).await?;
-    form.reminders = RemindersVm::from_rows(&stored, row.time_of_day.is_some(), ROUTINE_TIME_SOURCE);
+    form.reminders =
+        RemindersVm::from_rows(&stored, row.time_of_day.is_some(), ROUTINE_TIME_SOURCE);
     return Ok(html(&EditRoutinePage { shell, form })?);
 }
 
@@ -655,7 +654,12 @@ async fn update_routine_ssr(
                         .await?;
                 form.reminders = RemindersVm::from_rows(
                     &stored,
-                    !payload.time_of_day.as_deref().unwrap_or("").trim().is_empty(),
+                    !payload
+                        .time_of_day
+                        .as_deref()
+                        .unwrap_or("")
+                        .trim()
+                        .is_empty(),
                     ROUTINE_TIME_SOURCE,
                 );
             }

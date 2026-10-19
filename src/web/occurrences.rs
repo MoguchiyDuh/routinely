@@ -22,9 +22,9 @@ use crate::auth::extract::ApiAuth;
 use crate::auth::extract::PageAuth;
 use crate::store;
 
+use super::ActionQuery;
 use super::WebError;
 use super::WebResult;
-use super::ActionQuery;
 use super::day::DayQuery;
 use super::day::build_routines_section;
 use super::hex_encode;
@@ -286,7 +286,9 @@ fn normalize_notes(raw: Option<&str>) -> Result<Option<String>, WebError> {
         return Ok(None);
     }
     if trimmed.chars().count() > MAX_NOTES_CHARS {
-        return Err(WebError::Validation("notes are too long (max 4000 characters)"));
+        return Err(WebError::Validation(
+            "notes are too long (max 4000 characters)",
+        ));
     }
     return Ok(Some(trimmed.to_string()));
 }

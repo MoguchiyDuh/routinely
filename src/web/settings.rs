@@ -255,11 +255,9 @@ async fn notifications_ssr(
             let mut page = build_page(&state, &auth.id, shell, errors).await?;
             page.notif = vm_from_form(&form);
             let body = page.render()?;
-            return Ok((
-                StatusCode::UNPROCESSABLE_ENTITY,
-                axum::response::Html(body),
-            )
-                .into_response());
+            return Ok(
+                (StatusCode::UNPROCESSABLE_ENTITY, axum::response::Html(body)).into_response(),
+            );
         }
     }
 }

@@ -144,12 +144,11 @@ fn notification_from_record(row: NotificationRecord) -> NotificationRow {
 }
 
 pub async fn unread_count(pool: &SqlitePool, user_id: i64) -> Result<i64, sqlx::Error> {
-    let (count,): (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND read_at IS NULL",
-    )
-    .bind(user_id)
-    .fetch_one(pool)
-    .await?;
+    let (count,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND read_at IS NULL")
+            .bind(user_id)
+            .fetch_one(pool)
+            .await?;
     return Ok(count);
 }
 
@@ -204,13 +203,12 @@ pub async fn mark_read(
 }
 
 pub async fn mark_all_read(pool: &SqlitePool, user_id: i64) -> Result<u64, sqlx::Error> {
-    let result = sqlx::query(
-        "UPDATE notifications SET read_at = $1 WHERE user_id = $2 AND read_at IS NULL",
-    )
-    .bind(Utc::now().to_rfc3339())
-    .bind(user_id)
-    .execute(pool)
-    .await?;
+    let result =
+        sqlx::query("UPDATE notifications SET read_at = $1 WHERE user_id = $2 AND read_at IS NULL")
+            .bind(Utc::now().to_rfc3339())
+            .bind(user_id)
+            .execute(pool)
+            .await?;
     return Ok(result.rows_affected());
 }
 
@@ -343,8 +341,7 @@ pub fn apply_cleared_times(prefs: &mut NotificationPrefs, stored: &NotificationP
 }
 
 pub fn validate_prefs(prefs: &NotificationPrefs) -> Result<NotificationPrefs, &'static str> {
-    let day_end_time =
-        normalize_clock(&prefs.day_end_time).ok_or("day end time must be HH:MM")?;
+    let day_end_time = normalize_clock(&prefs.day_end_time).ok_or("day end time must be HH:MM")?;
     let quiet_start = optional_clock(prefs.quiet_start.as_deref())?;
     let quiet_end = optional_clock(prefs.quiet_end.as_deref())?;
     if quiet_start.is_some() != quiet_end.is_some() {
@@ -353,8 +350,8 @@ pub fn validate_prefs(prefs: &NotificationPrefs) -> Result<NotificationPrefs, &'
     if quiet_start.is_some() && quiet_start == quiet_end {
         return Err("quiet hours start and end must differ");
     }
-    let default_routine_allday_time = normalize_clock(&prefs.default_routine_allday_time)
-        .ok_or("default time must be HH:MM")?;
+    let default_routine_allday_time =
+        normalize_clock(&prefs.default_routine_allday_time).ok_or("default time must be HH:MM")?;
     let default_todo_allday_time =
         normalize_clock(&prefs.default_todo_allday_time).ok_or("default time must be HH:MM")?;
     let default_todo_allday_days = match prefs.default_todo_allday_days {
@@ -384,7 +381,14 @@ pub async fn save_prefs(
     user_id: i64,
     prefs: &NotificationPrefs,
 ) -> Result<(), sqlx::Error> {
-    insert_prefs_row(pool, user_id, &NotificationPrefs::default(), Utc::now(), true).await?;
+    insert_prefs_row(
+        pool,
+        user_id,
+        &NotificationPrefs::default(),
+        Utc::now(),
+        true,
+    )
+    .await?;
     sqlx::query(
         "UPDATE notification_prefs SET enabled = $2, day_end_enabled = $3, day_end_time = $4, \
          penalty_enabled = $5, quiet_start = $6, quiet_end = $7, default_routine_timed_minutes = $8, \
@@ -575,11 +579,7 @@ fn fire_time(
     };
 }
 
-fn in_fire_window(
-    now_utc: DateTime<Utc>,
-    fire: DateTime<Utc>,
-    reminder_created_at: &str,
-) -> bool {
+fn in_fire_window(now_utc: DateTime<Utc>, fire: DateTime<Utc>, reminder_created_at: &str) -> bool {
     let age = now_utc - fire;
     if age < Duration::zero() || age > Duration::minutes(FIRE_WINDOW_MINUTES) {
         return false;
@@ -819,8 +819,17 @@ async fn todo_reminders(
     .bind(user.id)
     .fetch_all(pool)
     .await?;
-    for (reminder_id, created_at, offset_value, offset_unit, at_time, _, title, deadline, all_day) in
-        rows
+    for (
+        reminder_id,
+        created_at,
+        offset_value,
+        offset_unit,
+        at_time,
+        _,
+        title,
+        deadline,
+        all_day,
+    ) in rows
     {
         let Ok(deadline) = DateTime::parse_from_rfc3339(&deadline) else {
             continue;

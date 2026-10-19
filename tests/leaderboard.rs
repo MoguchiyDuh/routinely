@@ -841,5 +841,7 @@ async fn seed_tick(pool: &SqlitePool, routine_id: i64, date: NaiveDate) -> i64 {
         .await
         .unwrap()
         .unwrap();
-    return routinely::store::tick(pool, &routine, date, None).await.unwrap();
+    return routinely::store::tick(pool, &routine, date, None)
+        .await
+        .unwrap();
 }

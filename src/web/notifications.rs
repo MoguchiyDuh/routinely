@@ -146,7 +146,11 @@ fn row_vm(spec: &store::ReminderSpec, timed: bool) -> ReminderRowVm {
 }
 
 impl RemindersVm {
-    pub fn new(specs: &[store::ReminderSpec], timed: bool, time_source: &'static str) -> RemindersVm {
+    pub fn new(
+        specs: &[store::ReminderSpec],
+        timed: bool,
+        time_source: &'static str,
+    ) -> RemindersVm {
         let blank = store::ReminderSpec {
             offset_value: 10,
             offset_unit: "minutes".to_string(),
@@ -165,7 +169,11 @@ impl RemindersVm {
         };
     }
 
-    pub fn from_rows(rows: &[store::ReminderRow], timed: bool, time_source: &'static str) -> RemindersVm {
+    pub fn from_rows(
+        rows: &[store::ReminderRow],
+        timed: bool,
+        time_source: &'static str,
+    ) -> RemindersVm {
         let specs: Vec<store::ReminderSpec> = rows
             .iter()
             .map(|row| store::ReminderSpec {
@@ -188,7 +196,11 @@ impl RemindersVm {
         };
     }
 
-    pub fn with_defaults(mut self, prefs: &notify::NotificationPrefs, target_type: &str) -> RemindersVm {
+    pub fn with_defaults(
+        mut self,
+        prefs: &notify::NotificationPrefs,
+        target_type: &str,
+    ) -> RemindersVm {
         let encode = |timed: bool| {
             serde_json::to_string(&store::default_reminder_specs(prefs, target_type, timed))
                 .unwrap_or_else(|_| "[]".to_string())
@@ -248,7 +260,11 @@ fn relative_label(created: DateTime<Utc>, now: DateTime<Utc>) -> String {
     };
 }
 
-fn notification_vm(row: notify::NotificationRow, timezone: &str, now: DateTime<Utc>) -> NotificationVm {
+fn notification_vm(
+    row: notify::NotificationRow,
+    timezone: &str,
+    now: DateTime<Utc>,
+) -> NotificationVm {
     let tz = store::user_timezone(timezone);
     let (when_label, when_full) = match DateTime::parse_from_rfc3339(&row.created_at) {
         Ok(parsed) => {
@@ -433,7 +449,9 @@ async fn api_read_all(
     State(state): State<AppState>,
 ) -> Result<axum::Json<serde_json::Value>, WebError> {
     let updated = notify::mark_all_read(&state.pool, auth.id).await?;
-    return Ok(axum::Json(serde_json::json!({ "ok": true, "updated": updated })));
+    return Ok(axum::Json(
+        serde_json::json!({ "ok": true, "updated": updated }),
+    ));
 }
 
 async fn api_read(

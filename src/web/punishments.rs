@@ -17,8 +17,8 @@ use crate::auth::extract::ApiAuth;
 use crate::auth::extract::PageAuth;
 use crate::auth::session::SessionUser;
 use crate::punish;
-use crate::store;
 use crate::punish::AssignTarget;
+use crate::store;
 
 use super::AvatarVm;
 use super::WebError;

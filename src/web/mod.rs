@@ -125,16 +125,27 @@ pub async fn html_errors(request: Request, next: Next) -> Response {
     }
     let replaceable = match response.headers().get(header::CONTENT_TYPE) {
         None => true,
-        Some(value) => value.to_str().is_ok_and(|raw| raw.starts_with("application/json")),
+        Some(value) => value
+            .to_str()
+            .is_ok_and(|raw| raw.starts_with("application/json")),
     };
     if !replaceable {
         return response;
     }
-    let detail = response.extensions().get::<ErrorMessage>().map(|message| message.0);
+    let detail = response
+        .extensions()
+        .get::<ErrorMessage>()
+        .map(|message| message.0);
     let (heading, fallback) = match status {
-        StatusCode::NOT_FOUND => ("Not found", "This page doesn't exist or isn't yours to see."),
+        StatusCode::NOT_FOUND => (
+            "Not found",
+            "This page doesn't exist or isn't yours to see.",
+        ),
         StatusCode::UNPROCESSABLE_ENTITY => ("That didn't work", "The request wasn't valid."),
-        StatusCode::CONFLICT => ("Conflict", "That changed in the meantime. Reload and try again."),
+        StatusCode::CONFLICT => (
+            "Conflict",
+            "That changed in the meantime. Reload and try again.",
+        ),
         StatusCode::PAYLOAD_TOO_LARGE => ("Too large", "The upload is over the size limit."),
         StatusCode::BAD_REQUEST => ("Bad request", "The request couldn't be read."),
         _ => ("Something went wrong", "Try again in a moment."),
@@ -212,7 +223,9 @@ impl ActionQuery {
                 .as_deref()
                 .and_then(|raw| chrono::NaiveDate::parse_from_str(raw, "%Y-%m-%d").ok());
             let who = self.who.as_deref().filter(|raw| {
-                *raw == "me" || *raw == "all" || (!raw.is_empty() && raw.bytes().all(|b| b.is_ascii_digit()))
+                *raw == "me"
+                    || *raw == "all"
+                    || (!raw.is_empty() && raw.bytes().all(|b| b.is_ascii_digit()))
             });
             if let (Some(week), Some(who)) = (week, who) {
                 return format!("/{}?date={week}&who={who}", back.unwrap_or("week"));

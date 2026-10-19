@@ -46,7 +46,6 @@ enum Who {
 }
 
 impl Who {
-
     fn filter_id(self, me: i64) -> Option<i64> {
         return match self {
             Who::Me => Some(me),
@@ -388,8 +387,16 @@ async fn build_week(
     let Some((week_start, week_end)) = period_bounds(anchor, PeriodKind::Week) else {
         return Err(WebError::Validation("invalid date"));
     };
-    let days =
-        build_cells(pool, timezone, week_start, week_end, today, who, weekly_as_bars).await?;
+    let days = build_cells(
+        pool,
+        timezone,
+        week_start,
+        week_end,
+        today,
+        who,
+        weekly_as_bars,
+    )
+    .await?;
     return Ok((week_start, week_end, days));
 }
 
@@ -595,8 +602,7 @@ async fn week_view(
 ) -> WebResult {
     let today = store::user_today(&auth.timezone);
     let anchor = parse_date_param(query.date.as_deref(), today)?;
-    let who = resolve_who(&state.pool, query.who.as_deref(), Who::Me)
-        .await?;
+    let who = resolve_who(&state.pool, query.who.as_deref(), Who::Me).await?;
     let shell = Shell::load(&state, &auth, "calendar", &headers).await?;
     let (week_start, week_end, days) = build_week(
         &state.pool,
@@ -724,8 +730,8 @@ fn build_page(shell: Shell, input: PageInput<'_>) -> WeekPage {
         Who::All => "all".to_string(),
         Who::User(id) => id.to_string(),
     };
-    let has_entries = !input.goals.is_empty()
-        || days.iter().chain(past_days.iter()).any(|vm| !vm.is_empty);
+    let has_entries =
+        !input.goals.is_empty() || days.iter().chain(past_days.iter()).any(|vm| !vm.is_empty);
     return WeekPage {
         shell,
         week_start: input.week_start,
@@ -869,7 +875,11 @@ fn build_day_vm(
                     ("open", "pill-open", "open", "circle-dashed")
                 };
                 let all_day = t.all_day;
-                let start_label = if all_day { String::new() } else { t.local_time.clone() };
+                let start_label = if all_day {
+                    String::new()
+                } else {
+                    t.local_time.clone()
+                };
                 let item = ItemVm {
                     kind: if is_deadline { "deadline" } else { "todo" },
                     href: day_href(date, t.user_id, me),
@@ -911,7 +921,10 @@ fn build_day_vm(
     all_day.extend(goals);
     all_day.extend(untimed);
     let timed: Vec<ItemVm> = timed.into_iter().map(|(_, item)| item).collect();
-    let flagged_count = all_day.iter().filter(|item| item.kind == "deadline").count();
+    let flagged_count = all_day
+        .iter()
+        .filter(|item| item.kind == "deadline")
+        .count();
     let mut agenda: Vec<ItemVm> = all_day[..flagged_count].to_vec();
     agenda.extend(timed.iter().cloned());
     agenda.extend(all_day[flagged_count..].iter().cloned());
@@ -1180,7 +1193,10 @@ async fn load_goal_data(pool: &SqlitePool) -> Result<GoalData, sqlx::Error> {
     let mut dates: HashMap<(i64, String), Vec<NaiveDate>> = HashMap::new();
     for (routine_id, period_start, due) in store::period_completion_dates(pool).await? {
         if let Ok(date) = NaiveDate::parse_from_str(&due, "%Y-%m-%d") {
-            dates.entry((routine_id, period_start)).or_default().push(date);
+            dates
+                .entry((routine_id, period_start))
+                .or_default()
+                .push(date);
         }
     }
     return Ok(GoalData { holders, dates });
@@ -1333,8 +1349,7 @@ async fn month_view(
 ) -> WebResult {
     let today = store::user_today(&auth.timezone);
     let anchor = parse_date_param(query.date.as_deref(), today)?;
-    let who = resolve_who(&state.pool, query.who.as_deref(), Who::Me)
-        .await?;
+    let who = resolve_who(&state.pool, query.who.as_deref(), Who::Me).await?;
     let Some((first, last)) = month_bounds(anchor) else {
         return Err(WebError::Validation("invalid date"));
     };
@@ -1383,7 +1398,12 @@ async fn month_view(
     for cell in cells {
         let vm = build_day_vm(cell, today, all_mode, &colors, auth.id, &HashSet::new());
         let total = vm.agenda.len();
-        let dots = vm.agenda.iter().take(MONTH_CELL_DOTS).map(dot_class).collect();
+        let dots = vm
+            .agenda
+            .iter()
+            .take(MONTH_CELL_DOTS)
+            .map(dot_class)
+            .collect();
         let items: Vec<ItemVm> = vm.agenda.into_iter().take(MONTH_CELL_ITEMS).collect();
         row.push(MonthCellVm {
             date: vm.date,

@@ -277,7 +277,9 @@ async fn password_hash(server: &Server, user_id: i64) -> String {
 }
 
 async fn session_count(server: &Server, user_id: i64) -> i64 {
-    let count = routinely::auth::session::session_count(&server.pool, user_id).await.unwrap();
+    let count = routinely::auth::session::session_count(&server.pool, user_id)
+        .await
+        .unwrap();
     return count;
 }
 
@@ -703,10 +705,19 @@ async fn heatmap_completed_day_level_4_missed_day_level_1() {
     assert_eq!(missed_cell.level, 1);
     let today = today_utc();
     let last = days.last().unwrap();
-    assert_eq!(last.date.weekday(), chrono::Weekday::Sun, "heatmap must end on Sunday");
+    assert_eq!(
+        last.date.weekday(),
+        chrono::Weekday::Sun,
+        "heatmap must end on Sunday"
+    );
     assert!(last.date >= today && last.date < today + chrono::Days::new(7));
     for cell in &days {
-        assert_eq!(cell.future, cell.date > today, "future flag wrong on {}", cell.date);
+        assert_eq!(
+            cell.future,
+            cell.date > today,
+            "future flag wrong on {}",
+            cell.date
+        );
         if cell.future {
             assert_eq!(cell.level, 0);
             assert_eq!(cell.expected, 0);
@@ -758,5 +769,7 @@ async fn seed_tick(pool: &SqlitePool, routine_id: i64, date: NaiveDate) -> i64 {
         .await
         .unwrap()
         .unwrap();
-    return routinely::store::tick(pool, &routine, date, None).await.unwrap();
+    return routinely::store::tick(pool, &routine, date, None)
+        .await
+        .unwrap();
 }

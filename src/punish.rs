@@ -1,7 +1,7 @@
 use chrono::NaiveDate;
 use chrono::Utc;
-use sqlx::SqlitePool;
 use sqlx::SqliteConnection;
+use sqlx::SqlitePool;
 
 use crate::auth::session::SessionUser;
 use crate::recurrence::ScheduleKind;
@@ -300,11 +300,12 @@ pub async fn close_punishment(
 }
 
 pub async fn pending_count(pool: &SqlitePool, user_id: i64) -> Result<u64, sqlx::Error> {
-    let (count,): (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM punishments WHERE user_id = $1 AND status = 'pending'")
-            .bind(user_id)
-            .fetch_one(pool)
-            .await?;
+    let (count,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM punishments WHERE user_id = $1 AND status = 'pending'",
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
     return Ok(u64::try_from(count).unwrap_or(0));
 }
 
@@ -557,4 +558,3 @@ async fn draw_active_catalog(
     .await?;
     return Ok(row.map(|(id,)| id));
 }
-

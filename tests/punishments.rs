@@ -1278,7 +1278,9 @@ async fn seed_tick(pool: &SqlitePool, routine_id: i64, date: NaiveDate) -> i64 {
         .await
         .unwrap()
         .unwrap();
-    return routinely::store::tick(pool, &routine, date, None).await.unwrap();
+    return routinely::store::tick(pool, &routine, date, None)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -1333,10 +1335,18 @@ async fn count_miss_over_cap_is_visible_and_linked_to_routine() {
     assert_eq!(row.2, Some(prev_monday.to_string()));
     assert_eq!(row.3, Some(prev_sunday.to_string()));
     let cookie = format!("session={token}");
-    let page = request(server.addr, "GET", "/punishments", &[("Cookie", cookie.as_str())], b"").await;
+    let page = request(
+        server.addr,
+        "GET",
+        "/punishments",
+        &[("Cookie", cookie.as_str())],
+        b"",
+    )
+    .await;
     assert_eq!(page.status, 200);
     assert!(
-        page.body.contains(&format!("missed swim goal in the week of {prev_monday}")),
+        page.body
+            .contains(&format!("missed swim goal in the week of {prev_monday}")),
         "goal miss must be labelled: {}",
         page.body
     );
@@ -1387,8 +1397,19 @@ async fn history_shows_what_was_missed() {
     .await;
     assert_eq!(cleared.status, 200, "clear failed: {cleared:?}");
     let cookie = format!("session={token}");
-    let page = request(server.addr, "GET", "/punishments", &[("Cookie", cookie.as_str())], b"").await;
-    let history = page.body.split("<h2>History</h2>").nth(1).unwrap_or_default();
+    let page = request(
+        server.addr,
+        "GET",
+        "/punishments",
+        &[("Cookie", cookie.as_str())],
+        b"",
+    )
+    .await;
+    let history = page
+        .body
+        .split("<h2>History</h2>")
+        .nth(1)
+        .unwrap_or_default();
     assert!(
         history.contains(&format!("missed daily drill on {missed}")),
         "history must name the miss: {history}"

@@ -132,9 +132,7 @@ fn resolve_range(
         },
         _ => {
             let monday = today
-                .checked_sub_days(Days::new(u64::from(
-                    today.weekday().num_days_from_monday(),
-                )))
+                .checked_sub_days(Days::new(u64::from(today.weekday().num_days_from_monday())))
                 .unwrap_or(today);
             ("week", Some(monday), monday.checked_add_days(Days::new(6)))
         }

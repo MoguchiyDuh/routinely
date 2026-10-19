@@ -1026,7 +1026,10 @@ async fn ssr_pages_and_api_update_mirror() {
     .await;
     assert_eq!(foreign_edit.status, 404);
     let old_edit = get_page(&server, &format!("/routines/{routine_id}/edit"), &token).await;
-    assert_eq!(old_edit.status, 303, "edit page for non-head must redirect to head");
+    assert_eq!(
+        old_edit.status, 303,
+        "edit page for non-head must redirect to head"
+    );
 }
 
 #[tokio::test]
@@ -1181,7 +1184,9 @@ async fn seed_tick(pool: &SqlitePool, routine_id: i64, date: NaiveDate) -> i64 {
         .await
         .unwrap()
         .unwrap();
-    return routinely::store::tick(pool, &routine, date, None).await.unwrap();
+    return routinely::store::tick(pool, &routine, date, None)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -1234,14 +1239,18 @@ async fn future_start_date_is_kept_and_validated() {
     assert_eq!(inverted.status, 422, "end before start must be rejected");
     let page = get_page(&server, "/routines", &token).await;
     assert!(
-        page.body.contains(&format!("starts {}", start.format("%a %-d %b"))),
+        page.body
+            .contains(&format!("starts {}", start.format("%a %-d %b"))),
         "routines list must show the future start: {}",
         page.body
     );
     let form = get_page(&server, "/routines/new", &token).await;
     assert!(form.body.contains(r#"name="start_date""#));
     let edit = get_page(&server, &format!("/routines/{id}/edit"), &token).await;
-    assert!(!edit.body.contains(r#"name="start_date""#), "edit must not offer start date");
+    assert!(
+        !edit.body.contains(r#"name="start_date""#),
+        "edit must not offer start date"
+    );
     let renamed = update_routine(
         &server,
         &token,
@@ -1250,11 +1259,16 @@ async fn future_start_date_is_kept_and_validated() {
     )
     .await;
     assert_eq!(renamed.status, 200, "rename failed: {renamed:?}");
-    let (after,): (String,) = sqlx::query_as("SELECT start_date FROM routines WHERE title = 'run far'")
-        .fetch_one(&server.pool)
-        .await
-        .unwrap();
-    assert_eq!(after, start.to_string(), "editing must keep the future start");
+    let (after,): (String,) =
+        sqlx::query_as("SELECT start_date FROM routines WHERE title = 'run far'")
+            .fetch_one(&server.pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        after,
+        start.to_string(),
+        "editing must keep the future start"
+    );
     let ssr = form_post(
         &server,
         "/routines",
@@ -1263,9 +1277,10 @@ async fn future_start_date_is_kept_and_validated() {
     )
     .await;
     assert_eq!(ssr.status, 303, "ssr create failed: {ssr:?}");
-    let (ssr_start,): (String,) = sqlx::query_as("SELECT start_date FROM routines WHERE title = 'later'")
-        .fetch_one(&server.pool)
-        .await
-        .unwrap();
+    let (ssr_start,): (String,) =
+        sqlx::query_as("SELECT start_date FROM routines WHERE title = 'later'")
+            .fetch_one(&server.pool)
+            .await
+            .unwrap();
     assert_eq!(ssr_start, start.to_string());
 }

@@ -7,8 +7,8 @@ use chrono::Utc;
 use chrono_tz::Tz;
 use serde::Deserialize;
 use serde::Serialize;
-use sqlx::SqlitePool;
 use sqlx::SqliteConnection;
+use sqlx::SqlitePool;
 
 use crate::recurrence::Schedule;
 use crate::recurrence::effective_end;
@@ -995,11 +995,13 @@ pub async fn update_routine(
     .bind(old.id)
     .fetch_one(&mut *tx)
     .await?;
-    sqlx::query("UPDATE reminders SET target_id = $1 WHERE target_type = 'routine' AND target_id = $2")
-        .bind(new_id)
-        .bind(old.id)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query(
+        "UPDATE reminders SET target_id = $1 WHERE target_type = 'routine' AND target_id = $2",
+    )
+    .bind(new_id)
+    .bind(old.id)
+    .execute(&mut *tx)
+    .await?;
     sqlx::query("UPDATE occurrences SET routine_id = $1 WHERE routine_id = $2 AND due_date >= $3")
         .bind(new_id)
         .bind(old.id)
@@ -1198,12 +1200,13 @@ pub async fn day_routines(
         if !is_scheduled_on(&schedule, date) {
             continue;
         }
-        let occurrence_id: Option<i64> =
-            sqlx::query_scalar("SELECT id FROM occurrences WHERE routine_id = $1 AND due_date = $2")
-                .bind(routine.id)
-                .bind(date.to_string())
-                .fetch_optional(pool)
-                .await?;
+        let occurrence_id: Option<i64> = sqlx::query_scalar(
+            "SELECT id FROM occurrences WHERE routine_id = $1 AND due_date = $2",
+        )
+        .bind(routine.id)
+        .bind(date.to_string())
+        .fetch_optional(pool)
+        .await?;
         let completion: Option<(i64, Option<String>)> = match occurrence_id {
             Some(id) => {
                 sqlx::query_as("SELECT id, evidence_note FROM completions WHERE occurrence_id = $1")
@@ -1350,11 +1353,12 @@ pub async fn pin_for_occurrence(
     let Some((pin_id, summary, notes)) = pin else {
         return Ok(None);
     };
-    let rows: Vec<(String, Option<String>, Option<String>)> =
-        sqlx::query_as("SELECT kind, url, file_path FROM attachments WHERE pin_id = $1 ORDER BY id")
-            .bind(pin_id)
-            .fetch_all(pool)
-            .await?;
+    let rows: Vec<(String, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT kind, url, file_path FROM attachments WHERE pin_id = $1 ORDER BY id",
+    )
+    .bind(pin_id)
+    .fetch_all(pool)
+    .await?;
     let mut links = Vec::new();
     let mut photos = Vec::new();
     for (kind, url, file_path) in rows {
@@ -1955,11 +1959,13 @@ pub fn default_reminder_specs(
             offset_unit: "days".to_string(),
             at_time: Some(prefs.default_routine_allday_time.clone()),
         }),
-        ("todo", true) => prefs.default_todo_timed_minutes.map(|minutes| ReminderSpec {
-            offset_value: minutes,
-            offset_unit: "minutes".to_string(),
-            at_time: None,
-        }),
+        ("todo", true) => prefs
+            .default_todo_timed_minutes
+            .map(|minutes| ReminderSpec {
+                offset_value: minutes,
+                offset_unit: "minutes".to_string(),
+                at_time: None,
+            }),
         ("todo", false) => prefs.default_todo_allday_days.map(|days| ReminderSpec {
             offset_value: days,
             offset_unit: "days".to_string(),
@@ -1997,6 +2003,9 @@ async fn prune_invalid_reminders(
     } else {
         "DELETE FROM reminders WHERE target_type = 'routine' AND target_id = $1 AND at_time IS NULL"
     };
-    sqlx::query(sql).bind(routine_id).execute(&mut *conn).await?;
+    sqlx::query(sql)
+        .bind(routine_id)
+        .execute(&mut *conn)
+        .await?;
     return Ok(());
 }

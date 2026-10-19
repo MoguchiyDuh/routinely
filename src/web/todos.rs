@@ -21,9 +21,9 @@ use crate::auth::extract::ApiAuth;
 use crate::auth::extract::PageAuth;
 use crate::store;
 
+use super::ActionQuery;
 use super::WebError;
 use super::WebResult;
-use super::ActionQuery;
 use super::day::DayQuery;
 use super::day::build_todos_section;
 use super::html;
@@ -89,8 +89,8 @@ async fn create_ssr(
     let title = validate_title(payload.title.as_deref())?;
     let reminders = match non_empty(payload.reminders_json.as_deref()) {
         Some(raw) => {
-            let list: Vec<store::ReminderSpec> = serde_json::from_str(raw)
-                .map_err(|_| WebError::Validation("invalid reminders"))?;
+            let list: Vec<store::ReminderSpec> =
+                serde_json::from_str(raw).map_err(|_| WebError::Validation("invalid reminders"))?;
             if due.deadline.is_none() && !list.is_empty() {
                 return Err(WebError::Validation("todo has no deadline"));
             }

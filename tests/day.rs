@@ -1179,7 +1179,9 @@ async fn seed_tick(pool: &SqlitePool, routine_id: i64, date: NaiveDate) -> i64 {
         .await
         .unwrap()
         .unwrap();
-    return routinely::store::tick(pool, &routine, date, None).await.unwrap();
+    return routinely::store::tick(pool, &routine, date, None)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -1242,20 +1244,31 @@ async fn ticking_is_limited_to_today() {
     .await;
     assert_eq!(ssr.status, 422);
     assert!(
-        ssr.header("content-type").unwrap_or_default().starts_with("text/html"),
+        ssr.header("content-type")
+            .unwrap_or_default()
+            .starts_with("text/html"),
         "browser gets an html error page: {ssr:?}"
     );
     assert!(ssr.body.contains("routines can be changed"), "{}", ssr.body);
     let past = get_page(&server, &format!("/day?date={yesterday}"), &token).await;
     assert_eq!(past.status, 200);
-    assert!(past.body.contains("locked-note"), "past day must show the lock note");
     assert!(
-        !past.body.contains(&format!("/occurrences/{id}/tick?date={yesterday}")),
+        past.body.contains("locked-note"),
+        "past day must show the lock note"
+    );
+    assert!(
+        !past
+            .body
+            .contains(&format!("/occurrences/{id}/tick?date={yesterday}")),
         "past day must not offer a tick form"
     );
     let current = get_page(&server, &format!("/day?date={today}"), &token).await;
     assert!(!current.body.contains("locked-note"));
-    assert!(current.body.contains(&format!("/occurrences/{id}/untick?date={today}")));
+    assert!(
+        current
+            .body
+            .contains(&format!("/occurrences/{id}/untick?date={today}"))
+    );
 }
 
 #[tokio::test]
@@ -1277,7 +1290,10 @@ async fn html_error_page_for_browsers_json_for_api() {
     .await;
     assert_eq!(browser.status, 404);
     assert!(browser.body.contains("Not found"), "{}", browser.body);
-    assert!(browser.body.contains(r#"href="/routines""#), "back link from referer");
+    assert!(
+        browser.body.contains(r#"href="/routines""#),
+        "back link from referer"
+    );
     let foreign = request(
         server.addr,
         "GET",
@@ -1290,7 +1306,10 @@ async fn html_error_page_for_browsers_json_for_api() {
         b"",
     )
     .await;
-    assert!(!foreign.body.contains("evil.example"), "cross-origin referer ignored");
+    assert!(
+        !foreign.body.contains("evil.example"),
+        "cross-origin referer ignored"
+    );
     let api = get_page(&server, "/routines/999999/edit", &token).await;
     assert_eq!(api.status, 404);
     assert!(api.body.contains(r#""error":"not_found""#), "{}", api.body);

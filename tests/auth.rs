@@ -71,11 +71,7 @@ async fn serve(config: Config) -> Server {
     tokio::spawn(async move {
         axum::serve(listener, router).await.unwrap();
     });
-    return Server {
-        addr,
-        pool,
-        config,
-    };
+    return Server { addr, pool, config };
 }
 
 async fn request(

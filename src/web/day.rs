@@ -123,7 +123,10 @@ pub(crate) struct RowVm {
     pub pin: Option<PinVm>,
 }
 
-pub(crate) fn done_days_label(dates: &[NaiveDate], period: crate::recurrence::PeriodKind) -> String {
+pub(crate) fn done_days_label(
+    dates: &[NaiveDate],
+    period: crate::recurrence::PeriodKind,
+) -> String {
     let format = match period {
         crate::recurrence::PeriodKind::Day => return String::new(),
         crate::recurrence::PeriodKind::Week => "%a",
@@ -603,7 +606,8 @@ async fn deadline_reminders(
     let prefs = crate::notify::get_prefs(pool, user_id).await?;
     let specs = store::default_reminder_specs(&prefs, "todo", false);
     return Ok(
-        super::notifications::RemindersVm::new(&specs, false, "dl-time").with_defaults(&prefs, "todo"),
+        super::notifications::RemindersVm::new(&specs, false, "dl-time")
+            .with_defaults(&prefs, "todo"),
     );
 }
 

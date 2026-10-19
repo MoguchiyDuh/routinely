@@ -202,7 +202,9 @@ async fn tick(server: &Server, token: &str, routine_id: i64, date: NaiveDate) {
 
 async fn untick(server: &Server, token: &str, routine_id: i64, date: NaiveDate) {
     if date != routinely::store::user_today("UTC") {
-        routinely::store::untick(&server.pool, routine_id, date).await.unwrap();
+        routinely::store::untick(&server.pool, routine_id, date)
+            .await
+            .unwrap();
         return;
     }
     let response = json_call(
@@ -972,7 +974,9 @@ async fn seed_tick(pool: &SqlitePool, routine_id: i64, date: NaiveDate) -> i64 {
         .await
         .unwrap()
         .unwrap();
-    return routinely::store::tick(pool, &routine, date, None).await.unwrap();
+    return routinely::store::tick(pool, &routine, date, None)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -1000,7 +1004,10 @@ async fn week_grid_offers_ticks_only_for_today_and_pins_goals() {
     assert_eq!(page.status, 200);
     assert!(page.body.contains("wk-grid"), "desktop grid missing");
     assert!(page.body.contains("goal-lane"), "goal lane missing");
-    assert!(page.body.contains(&format!("/occurrences/{goal}/untick?date={today}")));
+    assert!(
+        page.body
+            .contains(&format!("/occurrences/{goal}/untick?date={today}"))
+    );
     for (index, _) in page.body.match_indices("/tick?date=") {
         let date = &page.body[index + 11..index + 21];
         assert_eq!(date, today.to_string(), "tick form offered for {date}");
@@ -1009,11 +1016,22 @@ async fn week_grid_offers_ticks_only_for_today_and_pins_goals() {
         let date = &page.body[index + 13..index + 23];
         assert_eq!(date, today.to_string(), "untick form offered for {date}");
     }
-    assert!(page.body.contains(&format!("/occurrences/{daily}/tick?date={today}")));
+    assert!(
+        page.body
+            .contains(&format!("/occurrences/{daily}/tick?date={today}"))
+    );
     assert!(
         !page.body.contains("1/3 this week</span>"),
         "weekly goals must not be repeated as day entries"
     );
-    let past = get_page(&server, &format!("/week?date={}", week_start - Days::new(7)), &token).await;
-    assert!(!past.body.contains("/tick?date="), "past week must be read-only");
+    let past = get_page(
+        &server,
+        &format!("/week?date={}", week_start - Days::new(7)),
+        &token,
+    )
+    .await;
+    assert!(
+        !past.body.contains("/tick?date="),
+        "past week must be read-only"
+    );
 }
