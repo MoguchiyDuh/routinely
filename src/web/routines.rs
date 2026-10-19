@@ -426,12 +426,7 @@ async fn routine_view_page(
             .notes
             .clone()
             .filter(|notes| !notes.trim().is_empty()),
-        schedule: score::describe_schedule(
-            &schedule,
-            routine.time_of_day.as_deref(),
-            routine.time_end.as_deref(),
-            today,
-        ),
+        schedule: score::schedule_head(&schedule),
         time_window,
         start_date: schedule.start_date.to_string(),
         duration,

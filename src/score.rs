@@ -390,7 +390,7 @@ fn streak_horizon(today: NaiveDate) -> NaiveDate {
         .unwrap_or(NaiveDate::MIN);
 }
 
-fn schedule_head(schedule: &Schedule) -> String {
+pub fn schedule_head(schedule: &Schedule) -> String {
     return match schedule.kind {
         ScheduleKind::Weekdays => {
             let mut names: Vec<&str> = Vec::new();
