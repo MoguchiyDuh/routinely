@@ -3,7 +3,10 @@
 <div id="todo-region" class="todo-region">
 {% if is_today && !overdue.is_empty() %}
 <section class="card overdue" aria-label="Overdue">
-<h2 class="section-title danger">{{ ui::ico("circle-alert") }}Overdue</h2>
+<div class="card-header">
+<h2>{{ ui::ico("circle-alert") }}Overdue</h2>
+<span class="card-count tnum">{{ overdue.len() }}</span>
+</div>
 <ul class="todo-list">
 {% for t in overdue %}
 {% include "_todo_item.html" %}
@@ -14,6 +17,7 @@
 <section class="card deadlines" aria-label="Deadlines">
 <div class="card-header">
 <h2>{{ ui::ico("flag") }}Deadlines</h2>
+{% if !deadlines.is_empty() %}<span class="card-count tnum">{{ deadlines.len() }}</span>{% endif %}
 </div>
 {% if deadlines.is_empty() %}
 {% if readonly %}<p class="hint">No deadlines.</p>{% else %}<p class="hint">Flights, appointments, submissions: one date in time you can't miss.</p>{% endif %}
@@ -25,7 +29,7 @@
 </ul>
 {% endif %}
 {% if !readonly %}
-<details class="add-details">
+<details class="add-details card-foot">
 <summary class="btn btn-secondary">{{ ui::ico("plus") }}Add deadline</summary>
 <form class="todo-form" method="post" action="/todos?date={{ date }}" hx-post="/todos?date={{ date }}" hx-target="#todo-region" hx-swap="outerHTML">
 <input type="hidden" name="kind" value="deadline">
@@ -40,10 +44,11 @@
 </div>
 <div class="field">
 <div class="label-row">
-<label for="dl-time">Time <span class="hint-inline">optional, empty = all day</span></label>
+<label for="dl-time">Time</label>
 <button type="button" class="link-btn" data-clear="dl-time">Clear</button>
 </div>
-<input id="dl-time" type="time" name="time">
+<input id="dl-time" type="time" name="time" aria-describedby="dl-time-hint">
+<p class="hint" id="dl-time-hint">Empty = all day</p>
 </div>
 </div>
 <div class="field">
@@ -57,15 +62,27 @@
 {% endif %}
 </section>
 <section class="card todos" aria-label="Todos">
-<h2>Todos</h2>
-{% if !readonly %}
-<form class="todo-form" method="post" action="/todos?date={{ date }}" hx-post="/todos?date={{ date }}" hx-target="#todo-region" hx-swap="outerHTML">
-<div class="input-row">
-<label class="visually-hidden" for="todo-title">New todo</label>
-<input id="todo-title" name="title" maxlength="200" required autocomplete="off" placeholder="Add a todo, e.g. Buy milk">
-<button type="submit" class="btn btn-primary">{{ ui::ico("plus") }}Add</button>
+<div class="card-header">
+<h2>{{ ui::ico("list-todo") }}Todos</h2>
+{% if !todos.is_empty() %}<span class="card-count tnum">{{ todos.len() }}</span>{% endif %}
 </div>
-<div class="todo-extra">
+{% if todos.is_empty() %}
+{% if readonly %}<p class="hint">No open todos.</p>{% else %}<p class="hint">Small things to get done today or someday.</p>{% endif %}
+{% else %}
+<ul class="todo-list">
+{% for t in todos %}
+{% include "_todo_item.html" %}
+{% endfor %}
+</ul>
+{% endif %}
+{% if !readonly %}
+<details class="add-details card-foot">
+<summary class="btn btn-secondary">{{ ui::ico("plus") }}Add todo</summary>
+<form class="todo-form" method="post" action="/todos?date={{ date }}" hx-post="/todos?date={{ date }}" hx-target="#todo-region" hx-swap="outerHTML">
+<div class="field">
+<label for="todo-title">What</label>
+<input id="todo-title" name="title" maxlength="200" required autocomplete="off" placeholder="e.g. Buy milk">
+</div>
 <div class="field-row">
 <div class="field">
 <div class="label-row">
@@ -76,7 +93,7 @@
 </div>
 <div class="field">
 <div class="label-row">
-<label for="todo-time">Time <span class="hint-inline">optional</span></label>
+<label for="todo-time">Time</label>
 <button type="button" class="link-btn" data-clear="todo-time">Clear</button>
 </div>
 <input id="todo-time" type="time" name="time">
@@ -86,20 +103,9 @@
 <label for="todo-notes">Notes <span class="hint-inline">optional</span></label>
 <input id="todo-notes" name="notes" maxlength="500" autocomplete="off">
 </div>
-</div>
+<div class="form-actions"><button type="submit" class="btn btn-primary">{{ ui::ico("plus") }}Add todo</button></div>
 </form>
-{% endif %}
-{% if todos.is_empty() %}
-<div class="empty">
-{{ ui::ico("list-todo") }}
-<p>No open todos.</p>
-</div>
-{% else %}
-<ul class="todo-list">
-{% for t in todos %}
-{% include "_todo_item.html" %}
-{% endfor %}
-</ul>
+</details>
 {% endif %}
 </section>
 </div>
