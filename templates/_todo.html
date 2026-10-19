@@ -39,7 +39,10 @@
 <input id="dl-date" type="date" name="date" required>
 </div>
 <div class="field">
+<div class="label-row">
 <label for="dl-time">Time <span class="hint-inline">optional, empty = all day</span></label>
+<button type="button" class="link-btn" data-clear="dl-time">Clear</button>
+</div>
 <input id="dl-time" type="time" name="time">
 </div>
 </div>
@@ -72,7 +75,10 @@
 <input id="todo-date" type="date" name="date" value="{{ date }}">
 </div>
 <div class="field">
+<div class="label-row">
 <label for="todo-time">Time <span class="hint-inline">optional</span></label>
+<button type="button" class="link-btn" data-clear="todo-time">Clear</button>
+</div>
 <input id="todo-time" type="time" name="time">
 </div>
 </div>

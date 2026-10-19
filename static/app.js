@@ -53,6 +53,8 @@
         var target = document.getElementById(id);
         if (!target) return;
         target.value = "";
+        target.dispatchEvent(new Event("input", { bubbles: true }));
+        target.dispatchEvent(new Event("change", { bubbles: true }));
         if (index === 0) target.focus();
       });
       return;

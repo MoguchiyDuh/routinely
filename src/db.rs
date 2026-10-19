@@ -21,10 +21,10 @@ pub enum DbError {
 }
 
 pub async fn init(config: &Config) -> Result<SqlitePool, DbError> {
-    if let Some(parent) = Path::new(&config.database_path).parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)?;
-        }
+    if let Some(parent) = Path::new(&config.database_path).parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
     }
     let options = SqliteConnectOptions::new()
         .filename(&config.database_path)

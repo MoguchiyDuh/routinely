@@ -327,6 +327,21 @@ fn checked_minutes(value: Option<i64>) -> Result<Option<i64>, &'static str> {
     };
 }
 
+pub fn apply_cleared_times(prefs: &mut NotificationPrefs, stored: &NotificationPrefs) {
+    if prefs.day_end_time.trim().is_empty() {
+        prefs.day_end_enabled = false;
+        prefs.day_end_time = stored.day_end_time.clone();
+    }
+    if prefs.default_routine_allday_time.trim().is_empty() {
+        prefs.default_routine_allday_enabled = false;
+        prefs.default_routine_allday_time = stored.default_routine_allday_time.clone();
+    }
+    if prefs.default_todo_allday_time.trim().is_empty() {
+        prefs.default_todo_allday_days = None;
+        prefs.default_todo_allday_time = stored.default_todo_allday_time.clone();
+    }
+}
+
 pub fn validate_prefs(prefs: &NotificationPrefs) -> Result<NotificationPrefs, &'static str> {
     let day_end_time =
         normalize_clock(&prefs.day_end_time).ok_or("day end time must be HH:MM")?;

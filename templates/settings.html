@@ -71,7 +71,7 @@
 <legend>Alerts</legend>
 <div class="pref-row">
 <label class="pref-toggle"><input type="checkbox" name="day_end_enabled"{% if notif.day_end_enabled %} checked{% endif %}><span>Day-end nudge if routines are still open</span></label>
-<div class="pref-inputs"><label for="pref-day-end-time" class="pref-label">at</label><input id="pref-day-end-time" type="time" name="day_end_time" value="{{ notif.day_end_time }}"></div>
+<div class="pref-inputs"><label for="pref-day-end-time" class="pref-label">at</label><input id="pref-day-end-time" type="time" name="day_end_time" value="{{ notif.day_end_time }}"><button type="button" class="link-btn" data-clear="pref-day-end-time">Clear</button></div>
 </div>
 <div class="pref-row">
 <label class="pref-toggle"><input type="checkbox" name="penalty_enabled"{% if notif.penalty_enabled %} checked{% endif %}><span>Penalty issued and resolved</span></label>
@@ -93,7 +93,7 @@
 </div>
 <div class="pref-row">
 <label class="pref-toggle"><input type="checkbox" name="routine_allday_on"{% if notif.routine_allday_on %} checked{% endif %}><span>All-day routine, same day</span></label>
-<div class="pref-inputs"><label for="pref-routine-allday-time" class="pref-label">at</label><input id="pref-routine-allday-time" type="time" name="routine_allday_time" value="{{ notif.routine_allday_time }}"></div>
+<div class="pref-inputs"><label for="pref-routine-allday-time" class="pref-label">at</label><input id="pref-routine-allday-time" type="time" name="routine_allday_time" value="{{ notif.routine_allday_time }}"><button type="button" class="link-btn" data-clear="pref-routine-allday-time">Clear</button></div>
 </div>
 </fieldset>
 <fieldset>
@@ -115,7 +115,8 @@
 <div class="pref-inputs">
 <input type="number" name="todo_allday_days" min="0" max="28" step="1" value="{{ notif.todo_allday_days }}" aria-label="All-day deadline reminder days">
 <span class="pref-label">days before at</span>
-<input type="time" name="todo_allday_time" value="{{ notif.todo_allday_time }}" aria-label="All-day deadline reminder time">
+<input id="pref-todo-allday-time" type="time" name="todo_allday_time" value="{{ notif.todo_allday_time }}" aria-label="All-day deadline reminder time">
+<button type="button" class="link-btn" data-clear="pref-todo-allday-time">Clear</button>
 </div>
 </div>
 </fieldset>
@@ -124,6 +125,7 @@
 <div class="pref-inputs">
 <label for="pref-quiet-start" class="pref-label">From</label><input id="pref-quiet-start" type="time" name="quiet_start" value="{{ notif.quiet_start }}">
 <label for="pref-quiet-end" class="pref-label">to</label><input id="pref-quiet-end" type="time" name="quiet_end" value="{{ notif.quiet_end }}">
+<button type="button" class="link-btn" data-clear="pref-quiet-start pref-quiet-end">Clear</button>
 </div>
 </fieldset>
 <button type="submit" class="btn btn-primary">Save notification settings</button>

@@ -232,7 +232,11 @@ async fn notifications_ssr(
     headers: HeaderMap,
     Form(form): Form<NotificationForm>,
 ) -> WebResult {
-    let outcome = prefs_from_form(&form).and_then(|prefs| notify::validate_prefs(&prefs));
+    let stored = notify::get_prefs(&state.pool, auth.id).await?;
+    let outcome = prefs_from_form(&form).and_then(|mut prefs| {
+        notify::apply_cleared_times(&mut prefs, &stored);
+        return notify::validate_prefs(&prefs);
+    });
     match outcome {
         Ok(prefs) => {
             notify::save_prefs(&state.pool, auth.id, &prefs).await?;

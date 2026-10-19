@@ -458,8 +458,10 @@ async fn api_get_prefs(
 async fn api_put_prefs(
     ApiAuth(auth): ApiAuth,
     State(state): State<AppState>,
-    axum::Json(payload): axum::Json<notify::NotificationPrefs>,
+    axum::Json(mut payload): axum::Json<notify::NotificationPrefs>,
 ) -> Result<axum::Json<notify::NotificationPrefs>, WebError> {
+    let stored = notify::get_prefs(&state.pool, auth.id).await?;
+    notify::apply_cleared_times(&mut payload, &stored);
     let prefs = notify::validate_prefs(&payload).map_err(WebError::Validation)?;
     notify::save_prefs(&state.pool, auth.id, &prefs).await?;
     return Ok(axum::Json(prefs));
