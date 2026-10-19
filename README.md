@@ -8,8 +8,9 @@ Small self-hosted routine tracker for a group of friends. Track recurring routin
 - **Calendar**: day timeline, week time grid with weekly goal lanes, month overview
 - **Ticking**: only today's routines can be ticked; past and future days are read-only
 - **Proof**: attach a note, link or photos to a completed routine
+- **Archive**: archived routines can be restored or deleted permanently with their history and photos
 - **Todos and deadlines**: dated tasks shown alongside routines
-- **Journal**: daily notes and proof history with search
+- **Journal**: daily notes and proof history with text search and a per-routine filter (notes, links and photos)
 - **Penalties**: missed days and unmet goals draw from a shared catalog, max 3 per missed day; clear or waive
 - **Group**: leaderboard, profiles with heatmap, read-only view of other members' calendars
 - Server-rendered HTML with htmx; JSON API under `/api/v1`
@@ -40,13 +41,13 @@ cargo test
 
 ## Config
 
-| Variable                     | Default          |
-| ---------------------------- | ---------------- |
-| `ROUTINELY_SIGNUP_CODE`      | required         |
+| Variable                     | Default             |
+| ---------------------------- | ------------------- |
+| `ROUTINELY_SIGNUP_CODE`      | required            |
 | `ROUTINELY_DATABASE_PATH`    | `data/routinely.db` |
-| `ROUTINELY_BIND`             | `127.0.0.1:8080` |
-| `ROUTINELY_SESSION_TTL_SECS` | `2592000`        |
-| `ROUTINELY_COOKIE_SECURE`    | `false`          |
+| `ROUTINELY_BIND`             | `127.0.0.1:8080`    |
+| `ROUTINELY_SESSION_TTL_SECS` | `2592000`           |
+| `ROUTINELY_COOKIE_SECURE`    | `false`             |
 
 New accounts need the signup code. Set `ROUTINELY_COOKIE_SECURE=true` behind HTTPS.
 
@@ -62,4 +63,5 @@ src/score.rs    # Streaks, percentages, heatmap
 templates/      # Askama templates
 static/         # CSS, icons, htmx
 migrations/     # SQLite schema
+.github/        # CI: builds and pushes the image to GHCR
 ```
