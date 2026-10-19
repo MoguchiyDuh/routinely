@@ -8,6 +8,7 @@ use axum::response::IntoResponse;
 use axum::response::Redirect;
 use axum::response::Response;
 use axum::routing::delete;
+use axum::routing::get;
 use axum::routing::post;
 use chrono::NaiveDate;
 use chrono::NaiveDateTime;
@@ -60,12 +61,12 @@ struct Due {
 
 pub fn router() -> Router<AppState> {
     return Router::new()
-        .route("/todos", post(create_ssr))
-        .route("/todos/{id}", delete(delete_ssr))
+        .route("/todos", get(region_ssr).post(create_ssr))
+        .route("/todos/{id}", post(update_ssr).delete(delete_ssr))
         .route("/todos/{id}/delete", post(delete_ssr))
         .route("/todos/{id}/toggle", post(toggle_ssr))
         .route("/api/v1/todos", post(api_create))
-        .route("/api/v1/todos/{id}", delete(api_delete))
+        .route("/api/v1/todos/{id}", delete(api_delete).put(api_update))
         .route("/api/v1/todos/{id}/toggle", post(api_toggle));
 }
 
@@ -120,6 +121,156 @@ async fn create_ssr(
         None => {}
     }
     return finish_ssr(&state, &auth, day, today, &headers).await;
+}
+
+async fn region_ssr(
+    PageAuth(auth): PageAuth,
+    State(state): State<AppState>,
+    Query(query): Query<DayQuery>,
+    headers: HeaderMap,
+) -> WebResult {
+    let today = store::user_today(&auth.timezone);
+    let day = parse_date_param(query.date.as_deref(), today)?;
+    if !is_htmx(&headers) {
+        let target = match query.edit {
+            Some(id) => format!("/day?date={day}&edit={id}"),
+            None => format!("/day?date={day}"),
+        };
+        return Ok(Redirect::to(&target).into_response());
+    }
+    let section =
+        build_todos_section(&state.pool, auth.id, &auth.timezone, day, today, query.edit).await?;
+    return Ok(html(&section)?);
+}
+
+async fn update_ssr(
+    PageAuth(auth): PageAuth,
+    State(state): State<AppState>,
+    Path(todo_id): Path<i64>,
+    Query(query): Query<DayQuery>,
+    headers: HeaderMap,
+    Form(payload): Form<TodoForm>,
+) -> WebResult {
+    let today = store::user_today(&auth.timezone);
+    let day = parse_date_param(query.date.as_deref(), today)?;
+    let reminders = match non_empty(payload.reminders_json.as_deref()) {
+        Some(raw) => Some(
+            serde_json::from_str::<Vec<store::ReminderSpec>>(raw)
+                .map_err(|_| WebError::Validation("invalid reminders"))?,
+        ),
+        None => None,
+    };
+    apply_update(
+        &state,
+        &auth,
+        todo_id,
+        Edit {
+            title: payload.title.as_deref(),
+            notes: payload.notes.as_deref(),
+            deadline: payload.deadline.as_deref(),
+            date: payload.date.as_deref(),
+            time: payload.time.as_deref(),
+            reminders: reminders.as_deref(),
+        },
+        Some(day),
+    )
+    .await?;
+    return finish_ssr(&state, &auth, day, today, &headers).await;
+}
+
+struct Edit<'a> {
+    title: Option<&'a str>,
+    notes: Option<&'a str>,
+    deadline: Option<&'a str>,
+    date: Option<&'a str>,
+    time: Option<&'a str>,
+    reminders: Option<&'a [store::ReminderSpec]>,
+}
+
+async fn apply_update(
+    state: &AppState,
+    auth: &crate::auth::session::SessionUser,
+    todo_id: i64,
+    edit: Edit<'_>,
+    default_day: Option<NaiveDate>,
+) -> Result<Due, WebError> {
+    let Some(existing) = store::todo_for_user(&state.pool, auth.id, todo_id).await? else {
+        return Err(WebError::NotFound);
+    };
+    if existing.completed_at.is_some() {
+        return Err(WebError::Conflict);
+    }
+    let due = resolve_due(
+        Some(existing.kind.as_str()),
+        edit.deadline,
+        edit.date,
+        edit.time,
+        default_day,
+        &auth.timezone,
+    )?;
+    let title = validate_title(edit.title)?;
+    if let Some(list) = edit.reminders
+        && due.deadline.is_some()
+    {
+        store::normalize_reminders(list, !due.all_day)?;
+    }
+    let updated = store::update_todo(
+        &state.pool,
+        auth.id,
+        todo_id,
+        &title,
+        non_empty(edit.notes),
+        due.deadline.as_deref(),
+        due.all_day,
+    )
+    .await?;
+    if !updated {
+        return Err(WebError::Conflict);
+    }
+    match (due.deadline.is_some(), edit.reminders) {
+        (false, _) => store::clear_reminders(&state.pool, auth.id, "todo", todo_id).await?,
+        (true, Some(list)) => {
+            store::replace_reminders(&state.pool, auth.id, "todo", todo_id, list).await?;
+        }
+        (true, None) if existing.all_day != due.all_day || existing.deadline.is_none() => {
+            store::clear_reminders(&state.pool, auth.id, "todo", todo_id).await?;
+            store::apply_default_reminders(&state.pool, auth.id, "todo", todo_id, !due.all_day)
+                .await?;
+        }
+        (true, None) => {}
+    }
+    return Ok(due);
+}
+
+async fn api_update(
+    ApiAuth(auth): ApiAuth,
+    State(state): State<AppState>,
+    Path(todo_id): Path<i64>,
+    axum::Json(payload): axum::Json<TodoJsonPayload>,
+) -> Result<Response, WebError> {
+    let title = payload.title.as_deref().map(str::trim).map(str::to_string);
+    let due = apply_update(
+        &state,
+        &auth,
+        todo_id,
+        Edit {
+            title: title.as_deref(),
+            notes: payload.notes.as_deref(),
+            deadline: payload.deadline.as_deref(),
+            date: payload.date.as_deref(),
+            time: payload.time.as_deref(),
+            reminders: payload.reminders.as_deref(),
+        },
+        None,
+    )
+    .await?;
+    return Ok((
+        axum::http::StatusCode::OK,
+        axum::Json(
+            serde_json::json!({ "id": todo_id, "title": title, "deadline": due.deadline, "kind": due.kind, "all_day": due.all_day }),
+        ),
+    )
+        .into_response());
 }
 
 async fn delete_ssr(
@@ -246,7 +397,8 @@ async fn finish_ssr(
     headers: &HeaderMap,
 ) -> WebResult {
     if is_htmx(headers) {
-        let section = build_todos_section(&state.pool, auth.id, &auth.timezone, day, today).await?;
+        let section =
+            build_todos_section(&state.pool, auth.id, &auth.timezone, day, today, None).await?;
         return Ok(html(&section)?);
     }
     return Ok(Redirect::to(&format!("/day?date={day}")).into_response());

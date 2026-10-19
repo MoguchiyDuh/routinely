@@ -1,0 +1,47 @@
+{% import "_macros.html" as ui %}
+{% import "_reminders.html" as rem %}
+<li class="todo todo-editing{% if e.is_deadline %} is-deadline{% endif %}">
+<form class="todo-form todo-edit-form" method="post" action="/todos/{{ e.id }}?date={{ date }}" hx-post="/todos/{{ e.id }}?date={{ date }}" hx-target="#todo-region" hx-swap="outerHTML">
+<div class="field">
+<label for="edit-title">What</label>
+<input id="edit-title" name="title" maxlength="200" required autocomplete="off" value="{{ e.title }}" autofocus>
+</div>
+<div class="field-row">
+<div class="field">
+{% if e.is_deadline %}
+<label for="edit-date">Date</label>
+<input id="edit-date" type="date" name="date" required value="{{ e.date }}">
+{% else %}
+<div class="label-row">
+<label for="edit-date">Day</label>
+<button type="button" class="link-btn" data-clear="edit-date edit-time">No date</button>
+</div>
+<input id="edit-date" type="date" name="date" value="{{ e.date }}">
+{% endif %}
+</div>
+<div class="field">
+<div class="label-row">
+<label for="edit-time">Time</label>
+<button type="button" class="link-btn" data-clear="edit-time">Clear</button>
+</div>
+<input id="edit-time" type="time" name="time" value="{{ e.time }}"{% if e.is_deadline %} aria-describedby="edit-time-hint"{% endif %}>
+{% if e.is_deadline %}<p class="hint" id="edit-time-hint">Empty = all day</p>{% endif %}
+</div>
+</div>
+<div class="field">
+<label for="edit-notes">Notes <span class="hint-inline">optional</span></label>
+<input id="edit-notes" name="notes" maxlength="500" autocomplete="off" value="{{ e.notes }}">
+</div>
+{% if e.is_deadline %}
+{{ rem::editor(&e.reminders) }}
+{% else %}
+<div data-needs-value="edit-date"{% if e.date.is_empty() %} hidden{% endif %}>
+{{ rem::editor(&e.reminders) }}
+</div>
+{% endif %}
+<div class="form-actions">
+<button type="submit" class="btn btn-primary">{{ ui::ico("check") }}Save</button>
+<a class="btn btn-secondary" href="/day?date={{ date }}" hx-get="/todos?date={{ date }}" hx-target="#todo-region" hx-swap="outerHTML">Cancel</a>
+</div>
+</form>
+</li>

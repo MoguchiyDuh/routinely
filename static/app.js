@@ -204,10 +204,20 @@
     syncEditor(editor);
   });
 
+  var syncNeedsValue = function () {
+    document.querySelectorAll("[data-needs-value]").forEach(function (el) {
+      var source = document.getElementById(el.getAttribute("data-needs-value"));
+      el.hidden = !source || source.value === "";
+    });
+  };
+
   document.querySelectorAll("[data-reminders]").forEach(syncEditor);
   document.body.addEventListener("htmx:afterSwap", function () {
     document.querySelectorAll("[data-reminders]").forEach(syncEditor);
+    syncNeedsValue();
   });
+  document.addEventListener("input", syncNeedsValue);
+  document.addEventListener("change", syncNeedsValue);
 
   var now = document.querySelector(".now-divider");
   if (now && now.scrollIntoView) {

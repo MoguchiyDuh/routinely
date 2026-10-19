@@ -1857,11 +1857,29 @@ a.chip:focus-visible {
 }
 
 .todo {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--sp-2);
-  padding: 4px 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  column-gap: var(--sp-2);
+  padding: 4px 0 var(--sp-2);
   border-bottom: 1px solid var(--border);
+}
+
+.todo > .todo-toggle,
+.todo > .tick-btn {
+  grid-row: 1 / span 3;
+}
+
+.todo-meta {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--sp-3);
+}
+
+.todo-meta .countdown {
+  margin-left: 0;
 }
 
 .todo:last-child {
@@ -1874,14 +1892,10 @@ a.chip:focus-visible {
   margin: 0;
 }
 
-.todo-body {
-  flex: 1;
-  min-width: 0;
-  padding-top: 10px;
-}
-
 .todo-title {
+  grid-column: 2;
   display: block;
+  padding-top: 10px;
   overflow-wrap: anywhere;
 }
 
@@ -1899,6 +1913,7 @@ a.chip:focus-visible {
 }
 
 .todo-notes {
+  grid-column: 2 / -1;
   margin: 2px 0 0;
   color: var(--muted);
   font-size: var(--text-sm);
@@ -1923,6 +1938,33 @@ a.chip:focus-visible {
   display: inline-flex;
   flex: none;
   margin: 0;
+}
+
+.todo-actions {
+  grid-column: 3;
+  grid-row: 1;
+  display: flex;
+  flex: none;
+  align-items: center;
+}
+
+.todo-actions .btn-icon {
+  width: 36px;
+  min-width: 36px;
+  min-height: 36px;
+}
+
+.todo-edit {
+  color: var(--muted);
+}
+
+.todo-edit:hover {
+  color: var(--accent-strong);
+}
+
+.todo.todo-editing {
+  display: block;
+  padding: var(--sp-3) 0 var(--sp-4);
 }
 
 .todo-delete {
@@ -2988,12 +3030,14 @@ a.chip:focus-visible {
 
 .todo.is-deadline .todo-title {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
   font-weight: 600;
 }
 
 .todo.is-deadline .todo-title .icon {
+  flex: none;
+  margin-top: 4px;
   color: var(--deadline);
 }
 
@@ -3371,9 +3415,6 @@ a.month-wk:hover {
   white-space: nowrap;
 }
 
-.todo-due .countdown {
-  margin-left: 0;
-}
 
 .todos .field-row,
 .deadlines .field-row {
@@ -4449,7 +4490,13 @@ a.month-wk:hover {
 }
 
 .todo-rem {
-  flex-basis: 100%;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+}
+
+.todo-rem .icon {
+  flex: none;
+  margin-top: 3px;
 }
 
 .notif-form {

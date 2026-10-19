@@ -1513,6 +1513,70 @@ pub async fn toggle_todo(
     return Ok(result.rows_affected() > 0);
 }
 
+pub async fn todo_for_user(
+    pool: &SqlitePool,
+    user_id: i64,
+    todo_id: i64,
+) -> Result<Option<TodoRow>, sqlx::Error> {
+    let row: Option<TodoRecord> = sqlx::query_as(
+        "SELECT id, title, notes, deadline, completed_at, kind, all_day FROM todos WHERE id = $1 AND user_id = $2",
+    )
+    .bind(todo_id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+    return Ok(row.map(
+        |(id, title, notes, deadline, completed_at, kind, all_day)| TodoRow {
+            id,
+            title,
+            notes,
+            deadline,
+            completed_at,
+            kind,
+            all_day: all_day != 0,
+        },
+    ));
+}
+
+pub async fn update_todo(
+    pool: &SqlitePool,
+    user_id: i64,
+    todo_id: i64,
+    title: &str,
+    notes: Option<&str>,
+    deadline: Option<&str>,
+    all_day: bool,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE todos SET title = $1, notes = $2, deadline = $3, all_day = $4 \
+         WHERE id = $5 AND user_id = $6 AND completed_at IS NULL",
+    )
+    .bind(title)
+    .bind(notes)
+    .bind(deadline)
+    .bind(i64::from(all_day))
+    .bind(todo_id)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+    return Ok(result.rows_affected() > 0);
+}
+
+pub async fn clear_reminders(
+    pool: &SqlitePool,
+    user_id: i64,
+    target_type: &str,
+    target_id: i64,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM reminders WHERE user_id = $1 AND target_type = $2 AND target_id = $3")
+        .bind(user_id)
+        .bind(target_type)
+        .bind(target_id)
+        .execute(pool)
+        .await?;
+    return Ok(());
+}
+
 pub async fn delete_todo(
     pool: &SqlitePool,
     user_id: i64,

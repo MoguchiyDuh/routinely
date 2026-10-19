@@ -50,6 +50,7 @@ pub struct DayPage {
     todos: Vec<TodoVm>,
     deadlines: Vec<TodoVm>,
     reminders: super::notifications::RemindersVm,
+    edit: Option<TodoEditVm>,
     body: Option<String>,
     saved: bool,
     readonly: bool,
@@ -84,6 +85,7 @@ pub(crate) struct TodosSection {
     pub todos: Vec<TodoVm>,
     pub deadlines: Vec<TodoVm>,
     pub reminders: super::notifications::RemindersVm,
+    pub edit: Option<TodoEditVm>,
     pub readonly: bool,
 }
 
@@ -172,7 +174,18 @@ pub(crate) struct TodoVm {
     pub countdown: Option<String>,
     pub done: bool,
     pub overdue: bool,
+    pub editing: bool,
     pub reminders: Vec<String>,
+}
+
+pub(crate) struct TodoEditVm {
+    pub id: i64,
+    pub is_deadline: bool,
+    pub title: String,
+    pub notes: String,
+    pub date: String,
+    pub time: String,
+    pub reminders: super::notifications::RemindersVm,
 }
 
 pub(crate) struct TodoLists {
@@ -200,6 +213,7 @@ struct PendingBlock {
 pub struct DayQuery {
     pub date: Option<String>,
     pub who: Option<String>,
+    pub edit: Option<i64>,
 }
 
 #[derive(Serialize)]
@@ -275,7 +289,9 @@ async fn day_view(
     let shell = Shell::load(&state, &auth, "calendar", &headers).await?;
     let now_min = local_now_minutes(&auth.timezone);
     let data = build_routine_data(&state.pool, target, date, today, now_min).await?;
-    let lists = build_todo_lists(&state.pool, target, &auth.timezone).await?;
+    let edit_id = if readonly { None } else { query.edit };
+    let lists = build_todo_lists(&state.pool, target, &auth.timezone, edit_id).await?;
+    let edit = build_todo_edit(&state.pool, auth.id, &auth.timezone, edit_id).await?;
     let body = store::get_note(&state.pool, target, date).await?;
     let onboarding = if readonly {
         None
@@ -311,6 +327,7 @@ async fn day_view(
         todos: lists.todos,
         deadlines: lists.deadlines,
         reminders: deadline_reminders(&state.pool, auth.id).await?,
+        edit,
         body,
         saved: false,
         readonly,
@@ -586,8 +603,9 @@ pub(crate) async fn build_todos_section(
     timezone: &str,
     date: NaiveDate,
     today: NaiveDate,
+    edit_id: Option<i64>,
 ) -> Result<TodosSection, WebError> {
-    let lists = build_todo_lists(pool, user_id, timezone).await?;
+    let lists = build_todo_lists(pool, user_id, timezone, edit_id).await?;
     return Ok(TodosSection {
         date,
         is_today: date == today,
@@ -595,8 +613,51 @@ pub(crate) async fn build_todos_section(
         todos: lists.todos,
         deadlines: lists.deadlines,
         reminders: deadline_reminders(pool, user_id).await?,
+        edit: build_todo_edit(pool, user_id, timezone, edit_id).await?,
         readonly: false,
     });
+}
+
+async fn build_todo_edit(
+    pool: &SqlitePool,
+    user_id: i64,
+    timezone: &str,
+    edit_id: Option<i64>,
+) -> Result<Option<TodoEditVm>, WebError> {
+    let Some(todo_id) = edit_id else {
+        return Ok(None);
+    };
+    let Some(todo) = store::todo_for_user(pool, user_id, todo_id).await? else {
+        return Ok(None);
+    };
+    if todo.completed_at.is_some() {
+        return Ok(None);
+    }
+    let tz = store::user_timezone(timezone);
+    let local = todo
+        .deadline
+        .as_deref()
+        .and_then(|raw| DateTime::parse_from_rfc3339(raw).ok())
+        .map(|parsed| parsed.with_timezone(&tz));
+    let date = local
+        .map(|value| value.date_naive().to_string())
+        .unwrap_or_default();
+    let time = match local {
+        Some(value) if !todo.all_day => value.format("%H:%M").to_string(),
+        _ => String::new(),
+    };
+    let rows = store::list_reminders_for(pool, user_id, "todo", &[todo.id]).await?;
+    let reminders =
+        super::notifications::RemindersVm::from_rows(&rows, !time.is_empty(), "edit-time");
+    return Ok(Some(TodoEditVm {
+        id: todo.id,
+        is_deadline: todo.kind == "deadline",
+        title: todo.title,
+        notes: todo.notes.unwrap_or_default(),
+        date,
+        time,
+        reminders,
+    }));
 }
 
 async fn deadline_reminders(
@@ -615,6 +676,7 @@ async fn build_todo_lists(
     pool: &SqlitePool,
     user_id: i64,
     timezone: &str,
+    edit_id: Option<i64>,
 ) -> Result<TodoLists, WebError> {
     let now = Utc::now().to_rfc3339();
     let keep_done_after = (Utc::now() - chrono::Duration::hours(24)).to_rfc3339();
@@ -647,6 +709,7 @@ async fn build_todo_lists(
                 .and_then(|raw| fmt_countdown(raw, &tz, local_today)),
             done: t.completed_at.is_some(),
             overdue: is_overdue(t, &now),
+            editing: t.completed_at.is_none() && edit_id == Some(t.id),
             reminders: reminder_rows
                 .iter()
                 .filter(|row| row.target_id == t.id)
