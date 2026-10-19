@@ -94,6 +94,7 @@ pub struct MemberRow {
 pub struct PinRow {
     pub occurrence_id: i64,
     pub summary: String,
+    pub notes: Option<String>,
     pub links: Vec<String>,
     pub photos: Vec<String>,
 }
@@ -248,7 +249,14 @@ type WeekTodoRecord = (
     i64,
 );
 
-type PinAttachmentRecord = (i64, String, Option<String>, Option<String>, Option<String>);
+type PinAttachmentRecord = (
+    i64,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
 
 pub async fn todos_with_deadline_between(
     pool: &SqlitePool,
@@ -359,7 +367,7 @@ pub async fn pins_for_occurrences(
         return Ok(Vec::new());
     }
     let mut builder = sqlx::QueryBuilder::new(
-        "SELECT c.occurrence_id, p.summary, a.kind, a.url, a.file_path \
+        "SELECT c.occurrence_id, p.summary, p.notes, a.kind, a.url, a.file_path \
          FROM pins p \
          JOIN completions c ON c.id = p.completion_id \
          LEFT JOIN attachments a ON a.pin_id = p.id \
@@ -372,7 +380,7 @@ pub async fn pins_for_occurrences(
     builder.push(") ORDER BY c.occurrence_id, a.id");
     let rows: Vec<PinAttachmentRecord> = builder.build_query_as().fetch_all(pool).await?;
     let mut out: Vec<PinRow> = Vec::new();
-    for (occurrence_id, summary, kind, url, file_path) in rows {
+    for (occurrence_id, summary, notes, kind, url, file_path) in rows {
         if out
             .last()
             .is_none_or(|last| last.occurrence_id != occurrence_id)
@@ -380,6 +388,7 @@ pub async fn pins_for_occurrences(
             out.push(PinRow {
                 occurrence_id,
                 summary,
+                notes,
                 links: Vec::new(),
                 photos: Vec::new(),
             });
@@ -421,6 +430,7 @@ pub struct OnboardingFlags {
 #[derive(Debug, Clone)]
 pub struct PinInfo {
     pub summary: String,
+    pub notes: Option<String>,
     pub links: Vec<String>,
     pub photos: Vec<String>,
 }
@@ -1195,13 +1205,15 @@ pub async fn upsert_pin(
     pool: &SqlitePool,
     completion_id: i64,
     summary: &str,
+    notes: Option<&str>,
 ) -> Result<i64, sqlx::Error> {
     sqlx::query(
-        "INSERT INTO pins (completion_id, summary, created_at) VALUES ($1, $2, $3) \
-         ON CONFLICT (completion_id) DO UPDATE SET summary = excluded.summary",
+        "INSERT INTO pins (completion_id, summary, notes, created_at) VALUES ($1, $2, $3, $4) \
+         ON CONFLICT (completion_id) DO UPDATE SET summary = excluded.summary, notes = excluded.notes",
     )
     .bind(completion_id)
     .bind(summary)
+    .bind(notes)
     .bind(Utc::now().to_rfc3339())
     .execute(pool)
     .await?;
@@ -1248,14 +1260,14 @@ pub async fn pin_for_occurrence(
     pool: &SqlitePool,
     occurrence_id: i64,
 ) -> Result<Option<PinInfo>, sqlx::Error> {
-    let pin: Option<(i64, String)> = sqlx::query_as(
-        "SELECT p.id, p.summary FROM pins p JOIN completions c ON c.id = p.completion_id \
+    let pin: Option<(i64, String, Option<String>)> = sqlx::query_as(
+        "SELECT p.id, p.summary, p.notes FROM pins p JOIN completions c ON c.id = p.completion_id \
          WHERE c.occurrence_id = $1",
     )
     .bind(occurrence_id)
     .fetch_optional(pool)
     .await?;
-    let Some((pin_id, summary)) = pin else {
+    let Some((pin_id, summary, notes)) = pin else {
         return Ok(None);
     };
     let rows: Vec<(String, Option<String>, Option<String>)> =
@@ -1276,6 +1288,7 @@ pub async fn pin_for_occurrence(
     }
     return Ok(Some(PinInfo {
         summary,
+        notes,
         links,
         photos,
     }));
@@ -1464,7 +1477,7 @@ pub async fn get_note(
 
 const JOURNAL_LIMIT: i64 = 1000;
 
-pub type JournalPinRecord = (String, i64, i64, String, String);
+pub type JournalPinRecord = (String, i64, i64, String, String, Option<String>);
 
 pub async fn journal_notes(
     pool: &SqlitePool,
@@ -1503,14 +1516,14 @@ pub async fn journal_pins(
     let from = from.map(|day| day.to_string());
     let to = to.map(|day| day.to_string());
     let rows: Vec<JournalPinRecord> = sqlx::query_as(
-        "SELECT o.due_date, o.id, r.id, r.title, p.summary \
+        "SELECT o.due_date, o.id, r.id, r.title, p.summary, p.notes \
          FROM pins p \
          JOIN completions c ON c.id = p.completion_id \
          JOIN occurrences o ON o.id = c.occurrence_id \
          JOIN routines r ON r.id = o.routine_id \
          WHERE r.user_id = $1 \
          AND ($2 IS NULL OR o.due_date >= $2) AND ($3 IS NULL OR o.due_date <= $3) \
-         AND ($4 IS NULL OR p.summary LIKE $4 ESCAPE '\\' OR r.title LIKE $4 ESCAPE '\\') \
+         AND ($4 IS NULL OR p.summary LIKE $4 ESCAPE '\\' OR p.notes LIKE $4 ESCAPE '\\' OR r.title LIKE $4 ESCAPE '\\') \
          AND ($5 IS NULL OR LOWER(TRIM(r.title)) = LOWER(TRIM($5))) \
          ORDER BY o.due_date DESC, o.id DESC LIMIT $6",
     )

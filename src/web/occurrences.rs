@@ -34,6 +34,7 @@ use super::parse_date_param;
 use super::week::pin_fragment;
 
 const MAX_PHOTO_BYTES: usize = 10 * 1024 * 1024;
+const MAX_NOTES_CHARS: usize = 4000;
 
 #[derive(Debug, Deserialize)]
 struct TickPayload {
@@ -48,6 +49,7 @@ struct CompletionPayload {
 #[derive(Debug, Deserialize)]
 struct PinJsonPayload {
     summary: Option<String>,
+    notes: Option<String>,
     link_url: Option<String>,
 }
 
@@ -105,12 +107,16 @@ async fn pin_ssr(
     let today = store::user_today(&auth.timezone);
     let day = parse_date_param(query.date.as_deref(), today)?;
     let mut summary: Option<String> = None;
+    let mut notes: Option<String> = None;
     let mut link_url: Option<String> = None;
     let mut photos: Vec<(String, Vec<u8>)> = Vec::new();
     while let Some(field) = multipart.next_field().await? {
         match field.name() {
             Some("summary") => {
                 summary = Some(field.text().await?);
+            }
+            Some("notes") => {
+                notes = Some(field.text().await?);
             }
             Some("link_url") => {
                 link_url = Some(field.text().await?);
@@ -130,9 +136,10 @@ async fn pin_ssr(
         }
     }
     let summary = require_summary(summary.as_deref())?;
+    let notes = normalize_notes(notes.as_deref())?;
     let link_url = validate_link(link_url.as_deref())?;
     let completion_id = load_completed_occurrence(&state, auth.id, occurrence_id).await?;
-    let pin_id = store::upsert_pin(&state.pool, completion_id, &summary).await?;
+    let pin_id = store::upsert_pin(&state.pool, completion_id, &summary, notes.as_deref()).await?;
     if let Some(url) = link_url {
         store::add_link_attachment(&state.pool, pin_id, &url).await?;
     }
@@ -200,9 +207,10 @@ async fn api_pin(
     axum::Json(payload): axum::Json<PinJsonPayload>,
 ) -> Result<Response, WebError> {
     let summary = require_summary(payload.summary.as_deref())?;
+    let notes = normalize_notes(payload.notes.as_deref())?;
     let link_url = validate_link(payload.link_url.as_deref())?;
     let completion_id = load_completed_occurrence(&state, auth.id, occurrence_id).await?;
-    let pin_id = store::upsert_pin(&state.pool, completion_id, &summary).await?;
+    let pin_id = store::upsert_pin(&state.pool, completion_id, &summary, notes.as_deref()).await?;
     if let Some(url) = link_url {
         store::add_link_attachment(&state.pool, pin_id, &url).await?;
     }
@@ -270,6 +278,17 @@ fn require_summary(raw: Option<&str>) -> Result<String, WebError> {
         return Err(WebError::Validation("summary is required"));
     }
     return Ok(summary.to_string());
+}
+
+fn normalize_notes(raw: Option<&str>) -> Result<Option<String>, WebError> {
+    let trimmed = raw.unwrap_or("").trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    if trimmed.chars().count() > MAX_NOTES_CHARS {
+        return Err(WebError::Validation("notes are too long (max 4000 characters)"));
+    }
+    return Ok(Some(trimmed.to_string()));
 }
 
 fn validate_link(raw: Option<&str>) -> Result<Option<String>, WebError> {

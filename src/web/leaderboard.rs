@@ -122,6 +122,7 @@ struct ProfilePinJson {
     occurrence_id: i64,
     due_date: NaiveDate,
     summary: String,
+    notes: Option<String>,
     links: Vec<String>,
     photos: Vec<String>,
 }
@@ -389,8 +390,8 @@ async fn punishment_counts(
 }
 
 async fn recent_pins(pool: &SqlitePool, user_id: i64) -> Result<Vec<ProfilePinJson>, sqlx::Error> {
-    let rows: Vec<(i64, i64, String, String)> = sqlx::query_as(
-        "SELECT p.id, o.id, o.due_date, p.summary \
+    let rows: Vec<(i64, i64, String, String, Option<String>)> = sqlx::query_as(
+        "SELECT p.id, o.id, o.due_date, p.summary, p.notes \
          FROM pins p \
          JOIN completions c ON c.id = p.completion_id \
          JOIN occurrences o ON o.id = c.occurrence_id \
@@ -402,7 +403,7 @@ async fn recent_pins(pool: &SqlitePool, user_id: i64) -> Result<Vec<ProfilePinJs
     .bind(user_id)
     .fetch_all(pool)
     .await?;
-    let pin_ids: Vec<i64> = rows.iter().map(|(pin_id, _, _, _)| *pin_id).collect();
+    let pin_ids: Vec<i64> = rows.iter().map(|(pin_id, _, _, _, _)| *pin_id).collect();
     let mut attachments: HashMap<i64, (Vec<String>, Vec<String>)> = HashMap::new();
     if !pin_ids.is_empty() {
         let mut builder = sqlx::QueryBuilder::new(
@@ -427,7 +428,7 @@ async fn recent_pins(pool: &SqlitePool, user_id: i64) -> Result<Vec<ProfilePinJs
         }
     }
     let mut pins = Vec::new();
-    for (pin_id, occurrence_id, due_date, summary) in rows {
+    for (pin_id, occurrence_id, due_date, summary, notes) in rows {
         let Ok(day) = NaiveDate::parse_from_str(&due_date, "%Y-%m-%d") else {
             continue;
         };
@@ -436,6 +437,7 @@ async fn recent_pins(pool: &SqlitePool, user_id: i64) -> Result<Vec<ProfilePinJs
             occurrence_id,
             due_date: day,
             summary,
+            notes,
             links,
             photos,
         });

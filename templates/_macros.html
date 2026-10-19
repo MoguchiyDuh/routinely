@@ -38,6 +38,7 @@
 {{ ico("paperclip") }}
 {% endmatch %}
 <span class="pin-summary">{{ p.summary }}</span>
+{% if let Some(n) = p.notes %}<span class="pin-notes">{{ crate::web::linkify(n)|safe }}</span>{% endif %}
 {% for link in p.links %}
 <a class="pin-link" href="{{ link }}" target="_blank" rel="noopener noreferrer">{{ ico("link") }}Link</a>
 {% endfor %}
@@ -61,8 +62,8 @@
 <input id="proof-summary-{{ oid }}" name="summary" required maxlength="500"{% if let Some(p) = pin %} value="{{ p.summary }}"{% endif %}>
 </div>
 <div class="field">
-<label for="proof-link-{{ oid }}">Link <span class="hint-inline">optional</span></label>
-<input id="proof-link-{{ oid }}" name="link_url" type="url" placeholder="https://">
+<label for="proof-notes-{{ oid }}">Notes <span class="hint-inline">optional · links are clickable</span></label>
+<textarea id="proof-notes-{{ oid }}" name="notes" rows="3" maxlength="4000">{% if let Some(p) = pin %}{% if let Some(n) = p.notes %}{{ n }}{% endif %}{% endif %}</textarea>
 </div>
 <div class="field">
 <label for="proof-photos-{{ oid }}">Photos <span class="hint-inline">optional · PNG, JPEG or WebP</span></label>

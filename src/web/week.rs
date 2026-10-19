@@ -315,6 +315,7 @@ struct TodoEntry {
 #[derive(Serialize)]
 struct WeekPin {
     summary: String,
+    notes: Option<String>,
     links: Vec<String>,
     photos: Vec<String>,
 }
@@ -344,6 +345,7 @@ pub(crate) async fn pin_fragment(
         occurrence_id,
         pin: WeekPin {
             summary: pin.summary,
+            notes: pin.notes,
             links: pin.links,
             photos: pin.photos.iter().map(|path| upload_url(path)).collect(),
         },
@@ -416,6 +418,7 @@ async fn build_cells(
     for occ in occurrences {
         let pin = pins.remove(&occ.occurrence_id).map(|row| WeekPin {
             summary: row.summary,
+            notes: row.notes,
             links: row.links,
             photos: row.photos.iter().map(|path| upload_url(path)).collect(),
         });

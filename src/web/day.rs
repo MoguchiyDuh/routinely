@@ -153,6 +153,7 @@ pub(crate) struct BlockVm {
 
 pub(crate) struct PinVm {
     pub summary: String,
+    pub notes: Option<String>,
     pub thumb: Option<String>,
     pub links: Vec<String>,
 }
@@ -697,6 +698,7 @@ async fn load_pin(
     let pin = store::pin_for_occurrence(pool, occurrence_id).await?;
     return Ok(pin.map(|p| PinVm {
         summary: p.summary,
+        notes: p.notes,
         thumb: p.photos.first().map(|photo| format!("/uploads/{photo}")),
         links: p.links,
     }));

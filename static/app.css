@@ -1776,6 +1776,27 @@ a.chip:focus-visible {
   overflow-wrap: anywhere;
 }
 
+.pin-notes {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.pin-view .pin-notes {
+  flex-basis: 100%;
+}
+
+.pin-notes-clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+  padding: 0 10px 2px;
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
 .pin-link {
   display: inline-flex;
   align-items: center;

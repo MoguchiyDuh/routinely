@@ -80,6 +80,9 @@
 <li class="journal-proof">
 {% if readonly %}<span class="journal-proof-title">{{ p.title }}</span>{% else %}<a class="journal-proof-title" href="/routines/{{ p.routine_id }}/edit">{{ p.title }}</a>{% endif %}
 <p class="journal-text">{{ p.summary }}</p>
+{% if let Some(n) = p.notes %}
+<p class="pin-notes">{{ crate::web::linkify(n)|safe }}</p>
+{% endif %}
 {% if !p.links.is_empty() %}
 <p class="journal-links">
 {% for link in p.links %}

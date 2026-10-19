@@ -243,6 +243,55 @@ pub fn parse_date_param(
         .map_err(|_| WebError::Validation("invalid date"));
 }
 
+fn escape_html(text: &str, out: &mut String) {
+    for ch in text.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            other => out.push(other),
+        }
+    }
+}
+
+pub fn linkify(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() + 32);
+    let mut rest = text;
+    loop {
+        let http = rest.find("http://");
+        let https = rest.find("https://");
+        let start = match (http, https) {
+            (Some(a), Some(b)) => a.min(b),
+            (Some(a), None) => a,
+            (None, Some(b)) => b,
+            (None, None) => break,
+        };
+        escape_html(&rest[..start], &mut out);
+        let tail = &rest[start..];
+        let end = tail
+            .find(|c: char| c.is_whitespace() || matches!(c, '<' | '>' | '"' | '\''))
+            .unwrap_or(tail.len());
+        let candidate = &tail[..end];
+        let url = candidate.trim_end_matches(['.', ',', ')', ';', ':', '!', '?', ']', '}']);
+        let scheme_len = if url.starts_with("https://") { 8 } else { 7 };
+        if url.len() > scheme_len {
+            out.push_str("<a href=\"");
+            escape_html(url, &mut out);
+            out.push_str("\" target=\"_blank\" rel=\"noopener noreferrer\">");
+            escape_html(url, &mut out);
+            out.push_str("</a>");
+            escape_html(&candidate[url.len()..], &mut out);
+        } else {
+            escape_html(candidate, &mut out);
+        }
+        rest = &tail[end..];
+    }
+    escape_html(rest, &mut out);
+    return out;
+}
+
 pub fn hex_encode(bytes: &[u8]) -> String {
     let mut out = String::with_capacity(bytes.len() * 2);
     for byte in bytes {

@@ -65,6 +65,7 @@
 {% when None %}
 {% endmatch %}
 <span class="pin-caption">{{ pin.summary }}</span>
+{% if let Some(n) = pin.notes %}<span class="pin-notes pin-notes-clamp">{{ n }}</span>{% endif %}
 <span class="pin-date">{{ pin.due_date }}</span>
 </a>
 {% endfor %}

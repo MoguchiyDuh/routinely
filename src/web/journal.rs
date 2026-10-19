@@ -83,6 +83,7 @@ struct JournalProofVm {
     routine_id: i64,
     title: String,
     summary: String,
+    notes: Option<String>,
     links: Vec<String>,
     photos: Vec<String>,
 }
@@ -220,7 +221,7 @@ async fn journal_view(
         note_count += 1;
         by_day.entry(date).or_insert_with(|| empty_day(date)).note = Some(body);
     }
-    for (day_raw, occurrence_id, routine_id, title, summary) in pins {
+    for (day_raw, occurrence_id, routine_id, title, summary, notes) in pins {
         let Ok(date) = NaiveDate::parse_from_str(&day_raw, "%Y-%m-%d") else {
             continue;
         };
@@ -243,6 +244,7 @@ async fn journal_view(
                 routine_id,
                 title,
                 summary,
+                notes,
                 links,
                 photos,
             });

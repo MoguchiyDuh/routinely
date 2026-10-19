@@ -1,5 +1,8 @@
 <div id="pin-occ-{{ occurrence_id }}" class="pin">
 <p>{{ pin.summary }}</p>
+{% if let Some(n) = pin.notes %}
+<p class="pin-notes">{{ crate::web::linkify(n)|safe }}</p>
+{% endif %}
 {% if !pin.links.is_empty() %}
 <ul>
 {% for link in pin.links %}
