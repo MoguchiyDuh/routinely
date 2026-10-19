@@ -1,19 +1,18 @@
+mod common;
+
 use std::net::SocketAddr;
 use std::time::Duration;
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
 
 use chrono::Datelike;
 use chrono::Days;
 use chrono::NaiveDate;
 use chrono::Utc;
 use serde_json::Value;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 
 use routinely::app::AppState;
-use routinely::config::Config;
 use routinely::db;
 
 const SIGNUP_CODE: &str = "test-code";
@@ -21,7 +20,7 @@ const PASSWORD: &str = "password123";
 
 struct Server {
     addr: SocketAddr,
-    pool: SqlitePool,
+    pool: PgPool,
 }
 
 #[derive(Debug)]
@@ -70,27 +69,12 @@ impl HttpResponse {
     }
 }
 
-async fn setup(name: &str) -> Server {
-    let unique = format!(
-        "routinely-routines-{name}-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    );
-    let dir = std::env::temp_dir().join(unique);
-    std::fs::create_dir_all(&dir).unwrap();
-    let config = Config {
-        db_path: dir.join("routines.db"),
-        bind: "127.0.0.1:0".parse().unwrap(),
-        signup_code: SIGNUP_CODE.to_string(),
-        session_ttl: Duration::from_secs(600),
-        cookie_secure: false,
-    };
+async fn setup(_name: &str) -> Server {
+    let config = common::config(SIGNUP_CODE, Duration::from_secs(600)).await;
     let pool = db::init(&config).await.unwrap();
     let state = AppState {
         pool: pool.clone(),
+        kv: common::kv(&config).await,
         config: config.clone(),
     };
     let router = routinely::app::build_router(state);
@@ -232,7 +216,7 @@ async fn tick(server: &Server, token: &str, routine_id: i64, date: Option<NaiveD
 }
 
 async fn backdate_start(server: &Server, routine_id: i64, date: NaiveDate) {
-    sqlx::query("UPDATE routines SET start_date = ? WHERE id = ?")
+    sqlx::query("UPDATE routines SET start_date = $1 WHERE id = $2")
         .bind(date.to_string())
         .bind(routine_id)
         .execute(&server.pool)
@@ -241,7 +225,7 @@ async fn backdate_start(server: &Server, routine_id: i64, date: NaiveDate) {
 }
 
 async fn force_stale_eval(server: &Server, username: &str) {
-    sqlx::query("UPDATE users SET last_evaluated_day = '2000-01-01' WHERE username = ?")
+    sqlx::query("UPDATE users SET last_evaluated_day = '2000-01-01' WHERE username = $1")
         .bind(username)
         .execute(&server.pool)
         .await
@@ -321,7 +305,7 @@ async fn non_schedule_edit_updates_in_place() {
         Option<String>,
         Option<i64>,
     ) = sqlx::query_as(
-        "SELECT title, notes, time_of_day, time_end, previous_id FROM routines WHERE id = ?",
+        "SELECT title, notes, time_of_day, time_end, previous_id FROM routines WHERE id = $1",
     )
     .bind(id)
     .fetch_one(&server.pool)
@@ -382,7 +366,7 @@ async fn weekday_split_mid_history_preserves_past_and_scores() {
     let new_id = response.json()["id"].as_i64().unwrap();
     assert_ne!(new_id, id, "schedule edit mid-history must split");
     let (old_end, old_archived, old_start): (Option<String>, Option<String>, String) =
-        sqlx::query_as("SELECT end_date, archived_at, start_date FROM routines WHERE id = ?")
+        sqlx::query_as("SELECT end_date, archived_at, start_date FROM routines WHERE id = $1")
             .bind(id)
             .fetch_one(&server.pool)
             .await
@@ -391,7 +375,7 @@ async fn weekday_split_mid_history_preserves_past_and_scores() {
     assert!(old_archived.is_none(), "old version must not be archived");
     assert_eq!(old_start, (today - Days::new(14)).to_string());
     let (new_start, new_previous, new_mask): (String, Option<i64>, i64) =
-        sqlx::query_as("SELECT start_date, previous_id, weekdays_mask FROM routines WHERE id = ?")
+        sqlx::query_as("SELECT start_date, previous_id, weekdays_mask FROM routines WHERE id = $1")
             .bind(new_id)
             .fetch_one(&server.pool)
             .await
@@ -485,7 +469,7 @@ async fn ticked_and_pinned_today_moves_to_successor() {
     let new_id = response.json()["id"].as_i64().unwrap();
     assert_ne!(new_id, id);
     let (moved_routine,): (i64,) =
-        sqlx::query_as("SELECT routine_id FROM occurrences WHERE id = ?")
+        sqlx::query_as("SELECT routine_id FROM occurrences WHERE id = $1")
             .bind(occurrence_id)
             .fetch_one(&server.pool)
             .await
@@ -497,7 +481,7 @@ async fn ticked_and_pinned_today_moves_to_successor() {
     let (pin_count,): (i64,) = sqlx::query_as(
         "SELECT COUNT(*) FROM pins p \
          JOIN completions c ON c.id = p.completion_id \
-         JOIN occurrences o ON o.id = c.occurrence_id WHERE o.id = ?",
+         JOIN occurrences o ON o.id = c.occurrence_id WHERE o.id = $1",
     )
     .bind(occurrence_id)
     .fetch_one(&server.pool)
@@ -545,7 +529,7 @@ async fn excluded_today_drops_unticked_and_keeps_ticked() {
     .await;
     assert_eq!(response.status, 200);
     let (today_occurrences,): (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM occurrences WHERE due_date = ?")
+        sqlx::query_as("SELECT COUNT(*) FROM occurrences WHERE due_date = $1")
             .bind(today.to_string())
             .fetch_one(&server.pool)
             .await
@@ -581,9 +565,9 @@ async fn excluded_today_drops_unticked_and_keeps_ticked() {
     assert_eq!(response.status, 200);
     let new_id = response.json()["id"].as_i64().unwrap();
     let (kept_routine, completion_count): (i64, i64) = sqlx::query_as(
-        "SELECT o.routine_id, (c.id IS NOT NULL) FROM occurrences o \
+        "SELECT o.routine_id, COUNT(c.id) FROM occurrences o \
          LEFT JOIN completions c ON c.occurrence_id = o.id \
-         WHERE o.due_date = ?",
+         WHERE o.due_date = $1 GROUP BY o.routine_id",
     )
     .bind(today.to_string())
     .fetch_one(&server.pool)
@@ -635,7 +619,7 @@ async fn count_same_period_split_cuts_at_period_start_without_miss() {
     let new_id = response.json()["id"].as_i64().unwrap();
     assert_ne!(new_id, id);
     let (new_start, new_per_period): (String, i64) =
-        sqlx::query_as("SELECT start_date, per_period FROM routines WHERE id = ?")
+        sqlx::query_as("SELECT start_date, per_period FROM routines WHERE id = $1")
             .bind(new_id)
             .fetch_one(&server.pool)
             .await
@@ -647,7 +631,7 @@ async fn count_same_period_split_cuts_at_period_start_without_miss() {
     );
     assert_eq!(new_per_period, 3);
     let (old_end,): (Option<String>,) =
-        sqlx::query_as("SELECT end_date FROM routines WHERE id = ?")
+        sqlx::query_as("SELECT end_date FROM routines WHERE id = $1")
             .bind(id)
             .fetch_one(&server.pool)
             .await
@@ -657,7 +641,7 @@ async fn count_same_period_split_cuts_at_period_start_without_miss() {
         Some((monday - Days::new(1)).to_string().as_str())
     );
     let (moved_routine, period_start): (i64, String) =
-        sqlx::query_as("SELECT routine_id, period_start FROM occurrences WHERE due_date = ?")
+        sqlx::query_as("SELECT routine_id, period_start FROM occurrences WHERE due_date = $1")
             .bind(today.to_string())
             .fetch_one(&server.pool)
             .await
@@ -666,7 +650,7 @@ async fn count_same_period_split_cuts_at_period_start_without_miss() {
     assert_eq!(period_start, monday.to_string());
     let (progress_done,): (i64,) = sqlx::query_as(
         "SELECT COUNT(*) FROM completions c JOIN occurrences o ON o.id = c.occurrence_id \
-         WHERE o.routine_id = ? AND o.period_start = ?",
+         WHERE o.routine_id = $1 AND o.period_start = $2",
     )
     .bind(new_id)
     .bind(monday.to_string())
@@ -678,7 +662,7 @@ async fn count_same_period_split_cuts_at_period_start_without_miss() {
         "current period completions count on successor"
     );
     let old_reparented: (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM occurrences WHERE routine_id = ? AND due_date >= ?")
+        sqlx::query_as("SELECT COUNT(*) FROM occurrences WHERE routine_id = $1 AND due_date >= $2")
             .bind(id)
             .bind(monday.to_string())
             .fetch_one(&server.pool)
@@ -737,7 +721,7 @@ async fn count_to_weekdays_kind_change_no_spurious_miss() {
     assert_eq!(response.status, 200, "kind change failed: {response:?}");
     let new_id = response.json()["id"].as_i64().unwrap();
     let (new_kind, new_start): (String, String) =
-        sqlx::query_as("SELECT kind, start_date FROM routines WHERE id = ?")
+        sqlx::query_as("SELECT kind, start_date FROM routines WHERE id = $1")
             .bind(new_id)
             .fetch_one(&server.pool)
             .await
@@ -745,7 +729,7 @@ async fn count_to_weekdays_kind_change_no_spurious_miss() {
     assert_eq!(new_kind, "weekdays");
     assert_eq!(new_start, today.to_string(), "kind change cuts over today");
     let (old_end,): (Option<String>,) =
-        sqlx::query_as("SELECT end_date FROM routines WHERE id = ?")
+        sqlx::query_as("SELECT end_date FROM routines WHERE id = $1")
             .bind(id)
             .fetch_one(&server.pool)
             .await
@@ -756,7 +740,7 @@ async fn count_to_weekdays_kind_change_no_spurious_miss() {
         "old count version must end before its partial current period"
     );
     let (today_period_start,): (Option<String>,) =
-        sqlx::query_as("SELECT period_start FROM occurrences WHERE due_date = ?")
+        sqlx::query_as("SELECT period_start FROM occurrences WHERE due_date = $1")
             .bind(today.to_string())
             .fetch_one(&server.pool)
             .await
@@ -766,7 +750,7 @@ async fn count_to_weekdays_kind_change_no_spurious_miss() {
         "weekdays successor occurrences have no period"
     );
     let (past_on_old,): (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM occurrences WHERE routine_id = ? AND due_date < ?")
+        sqlx::query_as("SELECT COUNT(*) FROM occurrences WHERE routine_id = $1 AND due_date < $2")
             .bind(id)
             .bind(today.to_string())
             .fetch_one(&server.pool)
@@ -903,7 +887,7 @@ async fn non_head_and_foreign_updates_fail_and_starting_today_is_in_place() {
         "routine starting today edits in place"
     );
     let (rows, routine_start, routine_end): (i64, String, Option<String>) =
-        sqlx::query_as("SELECT COUNT(*), start_date, end_date FROM routines WHERE id = ?")
+        sqlx::query_as("SELECT COUNT(*) OVER (), start_date, end_date FROM routines WHERE id = $1")
             .bind(fresh)
             .fetch_one(&server.pool)
             .await
@@ -914,7 +898,7 @@ async fn non_head_and_foreign_updates_fail_and_starting_today_is_in_place() {
         routine_end.is_none(),
         "in-place schedule edit must not set end_date"
     );
-    let (stored_mask,): (i64,) = sqlx::query_as("SELECT weekdays_mask FROM routines WHERE id = ?")
+    let (stored_mask,): (i64,) = sqlx::query_as("SELECT weekdays_mask FROM routines WHERE id = $1")
         .bind(fresh)
         .fetch_one(&server.pool)
         .await
@@ -977,14 +961,14 @@ async fn ssr_pages_and_api_update_mirror() {
     .await;
     assert_eq!(api_update.status, 200, "API update failed: {api_update:?}");
     assert_eq!(api_update.json()["id"].as_i64().unwrap(), routine_id);
-    let (api_title,): (String,) = sqlx::query_as("SELECT title FROM routines WHERE id = ?")
+    let (api_title,): (String,) = sqlx::query_as("SELECT title FROM routines WHERE id = $1")
         .bind(routine_id)
         .fetch_one(&server.pool)
         .await
         .unwrap();
     assert_eq!(api_title, "Yoga API");
     let monday = week_monday(today_utc());
-    sqlx::query("UPDATE routines SET start_date = ? WHERE id = ?")
+    sqlx::query("UPDATE routines SET start_date = $1 WHERE id = $2")
         .bind((monday - Days::new(7)).to_string())
         .bind(routine_id)
         .execute(&server.pool)
@@ -1062,7 +1046,7 @@ async fn routines_page_splits_active_finished_and_hides_non_heads() {
     )
     .await;
     backdate_start(&server, id, today - Days::new(30)).await;
-    sqlx::query("UPDATE routines SET end_date = ? WHERE id = ?")
+    sqlx::query("UPDATE routines SET end_date = $1 WHERE id = $2")
         .bind((today - Days::new(1)).to_string())
         .bind(id)
         .execute(&server.pool)
@@ -1111,7 +1095,7 @@ async fn routines_page_splits_active_finished_and_hides_non_heads() {
     );
     assert!(list.body.contains("one week"));
     let (archived_at,): (Option<String>,) =
-        sqlx::query_as("SELECT archived_at FROM routines WHERE id = ?")
+        sqlx::query_as("SELECT archived_at FROM routines WHERE id = $1")
             .bind(one_week)
             .fetch_one(&server.pool)
             .await
@@ -1188,8 +1172,8 @@ async fn empty_routines_page_shows_empty_state() {
     );
 }
 
-async fn seed_tick(pool: &SqlitePool, routine_id: i64, date: NaiveDate) -> i64 {
-    let (user_id,): (i64,) = sqlx::query_as("SELECT user_id FROM routines WHERE id = ?")
+async fn seed_tick(pool: &PgPool, routine_id: i64, date: NaiveDate) -> i64 {
+    let (user_id,): (i64,) = sqlx::query_as("SELECT user_id FROM routines WHERE id = $1")
         .bind(routine_id)
         .fetch_one(pool)
         .await
@@ -1218,7 +1202,7 @@ async fn future_start_date_is_kept_and_validated() {
         }),
     )
     .await;
-    let (stored,): (String,) = sqlx::query_as("SELECT start_date FROM routines WHERE id = ?")
+    let (stored,): (String,) = sqlx::query_as("SELECT start_date FROM routines WHERE id = $1")
         .bind(id)
         .fetch_one(&server.pool)
         .await

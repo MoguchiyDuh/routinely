@@ -1,18 +1,19 @@
 FROM rust:1-bookworm AS build
 WORKDIR /src
 COPY . .
-RUN cargo build --release --locked
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/src/target \
+    cargo build --release --locked \
+    && cp target/release/routinely /usr/local/bin/routinely
 
-FROM debian:bookworm-slim AS runtime
-RUN useradd --system --uid 10001 --home-dir /app --shell /usr/sbin/nologin routinely \
-    && mkdir -p /app/data \
+FROM debian:bookworm-slim
+RUN useradd --system --uid 10001 --home-dir /app routinely \
+    && mkdir -p /app/data/uploads \
     && chown -R routinely:routinely /app
 WORKDIR /app
-COPY --from=build /src/target/release/routinely /usr/local/bin/routinely
-COPY --chown=routinely:routinely static ./static
+COPY --from=build /usr/local/bin/routinely /usr/local/bin/routinely
+COPY static ./static
 USER routinely
-ENV ROUTINELY_BIND=0.0.0.0:8080 \
-    ROUTINELY_DB_PATH=/app/data/routinely.db
-VOLUME /app/data
+ENV ROUTINELY_BIND=0.0.0.0:8080
 EXPOSE 8080
-ENTRYPOINT ["routinely"]
+CMD ["routinely"]

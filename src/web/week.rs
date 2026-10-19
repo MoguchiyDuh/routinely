@@ -15,7 +15,7 @@ use chrono::Utc;
 use chrono_tz::Tz;
 use serde::Deserialize;
 use serde::Serialize;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 
 use crate::app::AppState;
 use crate::auth::extract::ApiAuth;
@@ -350,7 +350,7 @@ pub(crate) async fn pin_fragment(
     })?);
 }
 
-async fn resolve_who(pool: &SqlitePool, raw: Option<&str>, default: Who) -> Result<Who, WebError> {
+async fn resolve_who(pool: &PgPool, raw: Option<&str>, default: Who) -> Result<Who, WebError> {
     let Some(raw) = raw else {
         return Ok(default);
     };
@@ -370,7 +370,7 @@ async fn resolve_who(pool: &SqlitePool, raw: Option<&str>, default: Who) -> Resu
 }
 
 async fn build_week(
-    pool: &SqlitePool,
+    pool: &PgPool,
     timezone: &str,
     anchor: NaiveDate,
     today: NaiveDate,
@@ -386,7 +386,7 @@ async fn build_week(
 }
 
 async fn build_cells(
-    pool: &SqlitePool,
+    pool: &PgPool,
     timezone: &str,
     week_start: NaiveDate,
     week_end: NaiveDate,
@@ -1166,7 +1166,7 @@ struct GoalData {
     dates: HashMap<(i64, String), Vec<NaiveDate>>,
 }
 
-async fn load_goal_data(pool: &SqlitePool) -> Result<GoalData, sqlx::Error> {
+async fn load_goal_data(pool: &PgPool) -> Result<GoalData, sqlx::Error> {
     let holders = store::active_routines_with_users(pool).await?;
     let mut dates: HashMap<(i64, String), Vec<NaiveDate>> = HashMap::new();
     for (routine_id, period_start, due) in store::period_completion_dates(pool).await? {

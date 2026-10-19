@@ -1,7 +1,7 @@
+mod common;
+
 use std::net::SocketAddr;
 use std::time::Duration;
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
 
 use chrono::Datelike;
 use chrono::Days;
@@ -12,12 +12,11 @@ use chrono::Weekday;
 use chrono_tz::America;
 use chrono_tz::Europe;
 use serde_json::Value;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 
 use routinely::app::AppState;
-use routinely::config::Config;
 use routinely::db;
 
 const SIGNUP_CODE: &str = "test-code";
@@ -25,7 +24,7 @@ const PASSWORD: &str = "password123";
 
 struct Server {
     addr: SocketAddr,
-    pool: SqlitePool,
+    pool: PgPool,
 }
 
 #[derive(Debug)]
@@ -62,27 +61,12 @@ impl HttpResponse {
     }
 }
 
-async fn setup(name: &str) -> Server {
-    let unique = format!(
-        "routinely-week-{name}-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    );
-    let dir = std::env::temp_dir().join(unique);
-    std::fs::create_dir_all(&dir).unwrap();
-    let config = Config {
-        db_path: dir.join("week.db"),
-        bind: "127.0.0.1:0".parse().unwrap(),
-        signup_code: SIGNUP_CODE.to_string(),
-        session_ttl: Duration::from_secs(600),
-        cookie_secure: false,
-    };
+async fn setup(_name: &str) -> Server {
+    let config = common::config(SIGNUP_CODE, Duration::from_secs(600)).await;
     let pool = db::init(&config).await.unwrap();
     let state = AppState {
         pool: pool.clone(),
+        kv: common::kv(&config).await,
         config: config.clone(),
     };
     let router = routinely::app::build_router(state);
@@ -193,7 +177,7 @@ async fn create_routine(server: &Server, token: &str, payload: Value) -> i64 {
 }
 
 async fn backdate_start(server: &Server, routine_id: i64, date: NaiveDate) {
-    sqlx::query("UPDATE routines SET start_date = ? WHERE id = ?")
+    sqlx::query("UPDATE routines SET start_date = $1 WHERE id = $2")
         .bind(date.to_string())
         .bind(routine_id)
         .execute(&server.pool)
@@ -571,7 +555,7 @@ async fn pin_fragment_serves_pin_and_404s_unpinned() {
     .await;
     let (pin_id,): (i64,) = sqlx::query_as(
         "SELECT p.id FROM pins p JOIN completions c ON c.id = p.completion_id \
-         WHERE c.occurrence_id = ?",
+         WHERE c.occurrence_id = $1",
     )
     .bind(occurrence_id)
     .fetch_one(&server.pool)
@@ -579,7 +563,7 @@ async fn pin_fragment_serves_pin_and_404s_unpinned() {
     .unwrap();
     sqlx::query(
         "INSERT INTO attachments (pin_id, kind, url, file_path, created_at) \
-         VALUES (?, 'photo', NULL, 'fragdigest.png', ?)",
+         VALUES ($1, 'photo', NULL, 'fragdigest.png', $2)",
     )
     .bind(pin_id)
     .bind(Utc::now().to_rfc3339())
@@ -938,7 +922,7 @@ async fn api_week_twin_shape() {
     .await;
     let (pin_id,): (i64,) = sqlx::query_as(
         "SELECT p.id FROM pins p JOIN completions c ON c.id = p.completion_id \
-         WHERE c.occurrence_id = ?",
+         WHERE c.occurrence_id = $1",
     )
     .bind(occurrence_id)
     .fetch_one(&server.pool)
@@ -946,7 +930,7 @@ async fn api_week_twin_shape() {
     .unwrap();
     sqlx::query(
         "INSERT INTO attachments (pin_id, kind, url, file_path, created_at) \
-         VALUES (?, 'photo', NULL, 'twindigest.png', ?)",
+         VALUES ($1, 'photo', NULL, 'twindigest.png', $2)",
     )
     .bind(pin_id)
     .bind(Utc::now().to_rfc3339())
@@ -979,8 +963,8 @@ async fn unauth_week_requests_redirect_or_401() {
     assert_eq!(fragment.header("location").as_deref(), Some("/login"));
 }
 
-async fn seed_tick(pool: &SqlitePool, routine_id: i64, date: NaiveDate) -> i64 {
-    let (user_id,): (i64,) = sqlx::query_as("SELECT user_id FROM routines WHERE id = ?")
+async fn seed_tick(pool: &PgPool, routine_id: i64, date: NaiveDate) -> i64 {
+    let (user_id,): (i64,) = sqlx::query_as("SELECT user_id FROM routines WHERE id = $1")
         .bind(routine_id)
         .fetch_one(pool)
         .await

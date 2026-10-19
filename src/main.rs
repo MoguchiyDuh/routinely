@@ -1,11 +1,15 @@
 use std::net::SocketAddr;
 
+use tokio::signal::unix::SignalKind;
+use tokio::signal::unix::signal;
+
 use thiserror::Error;
 use tracing_subscriber::EnvFilter;
 
 use routinely::app::{self, AppState};
 use routinely::config::{Config, ConfigError};
 use routinely::db::{self, DbError};
+use routinely::kv::{Kv, KvError};
 
 #[derive(Debug, Error)]
 enum AppError {
@@ -13,6 +17,8 @@ enum AppError {
     Config(#[from] ConfigError),
     #[error(transparent)]
     Db(#[from] DbError),
+    #[error(transparent)]
+    Kv(#[from] KvError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error("failed to bind {addr}")]
@@ -32,9 +38,11 @@ async fn main() -> Result<(), AppError> {
         .init();
     let config = Config::from_env()?;
     let pool = db::init(&config).await?;
+    let kv = Kv::connect(&config.valkey_url, &config.valkey_prefix).await?;
     std::fs::create_dir_all(routinely::store::UPLOADS_DIR)?;
     let state = AppState {
         pool,
+        kv,
         config: config.clone(),
     };
     let router = app::build_router(state);
@@ -44,6 +52,19 @@ async fn main() -> Result<(), AppError> {
             addr: config.bind,
             source,
         })?;
-    axum::serve(listener, router).await?;
+    axum::serve(listener, router)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
     return Ok(());
+}
+
+async fn shutdown_signal() {
+    let Ok(mut terminate) = signal(SignalKind::terminate()) else {
+        let _ = tokio::signal::ctrl_c().await;
+        return;
+    };
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {}
+        _ = terminate.recv() => {}
+    }
 }

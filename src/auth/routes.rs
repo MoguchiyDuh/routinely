@@ -17,6 +17,7 @@ use serde::Serialize;
 use thiserror::Error;
 
 use crate::app::AppState;
+use crate::kv::KvError;
 
 use super::AuthError;
 use super::extract::ApiAuth;
@@ -33,6 +34,8 @@ pub enum RouteError {
     Template(#[from] askama::Error),
     #[error(transparent)]
     Db(#[from] sqlx::Error),
+    #[error(transparent)]
+    Kv(#[from] KvError),
     #[error(transparent)]
     Hash(#[from] PasswordError),
     #[error(transparent)]
@@ -124,22 +127,17 @@ async fn signup_submit(
 ) -> Result<Response, RouteError> {
     let username = payload.username.clone().unwrap_or_default();
     let code = payload.code.clone().unwrap_or_default();
-    let result = perform_signup(
-        &state.pool,
-        &state.config,
-        payload.username,
-        payload.password,
-        payload.timezone,
-        payload.code,
-    )
-    .await;
+    let result = signup(&state, payload).await;
     return match result {
         Ok(user) => authed_redirect(&state, &user).await,
-        Err(err) => html_response(&SignupPage {
-            error: Some(signup_message(&err).to_string()),
-            username,
-            code,
-        }),
+        Err(err) => html_status(
+            error_status(&err),
+            &SignupPage {
+                error: Some(signup_message(&err).to_string()),
+                username,
+                code,
+            },
+        ),
     };
 }
 
@@ -155,22 +153,26 @@ async fn login_submit(
     Form(payload): Form<LoginPayload>,
 ) -> Result<Response, RouteError> {
     let username = payload.username.clone().unwrap_or_default();
+    let timezone = payload.timezone.clone();
     let result = perform_login(&state.pool, payload.username, payload.password).await;
     return match result {
         Ok(mut user) => {
-            sync_timezone(&state.pool, &mut user, payload.timezone.as_deref()).await?;
+            sync_timezone(&state.pool, &mut user, timezone.as_deref()).await?;
             return authed_redirect(&state, &user).await;
         }
-        Err(err) => html_response(&LoginPage {
-            error: Some(login_message(&err).to_string()),
-            username,
-        }),
+        Err(err) => html_status(
+            error_status(&err),
+            &LoginPage {
+                error: Some(login_message(&err).to_string()),
+                username,
+            },
+        ),
     };
 }
 
 async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Result<Response, RouteError> {
     if let Some(token) = token_from_headers(&headers) {
-        session::delete(&state.pool, &token).await?;
+        session::delete(&state.kv, &token).await?;
     }
     return redirect_with_cookie("/login", &session::clear_cookie());
 }
@@ -179,18 +181,10 @@ async fn api_signup(
     State(state): State<AppState>,
     Json(payload): Json<SignupPayload>,
 ) -> Result<Response, RouteError> {
-    let result = perform_signup(
-        &state.pool,
-        &state.config,
-        payload.username,
-        payload.password,
-        payload.timezone,
-        payload.code,
-    )
-    .await;
+    let result = signup(&state, payload).await;
     return match result {
         Ok(user) => {
-            let token = session::create(&state.pool, user.id, state.config.session_ttl).await?;
+            let token = session::create(&state.kv, user.id, state.config.session_ttl).await?;
             let body = user_body(&state, &user).await?;
             let mut response = (StatusCode::OK, Json(body)).into_response();
             set_cookie(
@@ -210,7 +204,7 @@ async fn api_login(
     let result = perform_login(&state.pool, payload.username, payload.password).await;
     return match result {
         Ok(user) => {
-            let token = session::create(&state.pool, user.id, state.config.session_ttl).await?;
+            let token = session::create(&state.kv, user.id, state.config.session_ttl).await?;
             let body = user_body(&state, &user).await?;
             let mut response = (StatusCode::OK, Json(body)).into_response();
             set_cookie(
@@ -229,7 +223,7 @@ async fn api_logout(
     headers: HeaderMap,
 ) -> Result<Response, RouteError> {
     if let Some(token) = token_from_headers(&headers) {
-        session::delete(&state.pool, &token).await?;
+        session::delete(&state.kv, &token).await?;
     }
     let mut response = (StatusCode::OK, Json(serde_json::json!({ "ok": true }))).into_response();
     set_cookie(&mut response, &session::clear_cookie())?;
@@ -257,11 +251,40 @@ fn html_response<T: Template>(template: &T) -> Result<Response, RouteError> {
     return Ok(Html(html).into_response());
 }
 
+fn html_status<T: Template>(status: StatusCode, template: &T) -> Result<Response, RouteError> {
+    let html = template.render()?;
+    return Ok((status, Html(html)).into_response());
+}
+
+async fn signup(
+    state: &AppState,
+    payload: SignupPayload,
+) -> Result<session::SessionUser, AuthError> {
+    return perform_signup(
+        &state.pool,
+        &state.config,
+        payload.username,
+        payload.password,
+        payload.timezone,
+        payload.code,
+    )
+    .await;
+}
+
+fn error_status(err: &AuthError) -> StatusCode {
+    return match err {
+        AuthError::Hash(_) | AuthError::Db(_) | AuthError::Kv(_) => {
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+        _ => StatusCode::OK,
+    };
+}
+
 async fn authed_redirect(
     state: &AppState,
     user: &session::SessionUser,
 ) -> Result<Response, RouteError> {
-    let token = session::create(&state.pool, user.id, state.config.session_ttl).await?;
+    let token = session::create(&state.kv, user.id, state.config.session_ttl).await?;
     let cookie = session::build_cookie(&token, state.config.cookie_secure);
     return redirect_with_cookie("/", &cookie);
 }
@@ -291,7 +314,9 @@ fn api_error_response(err: &AuthError) -> Response {
         AuthError::InvalidPassword => (StatusCode::UNPROCESSABLE_ENTITY, "invalid_password"),
         AuthError::InvalidTimezone => (StatusCode::UNPROCESSABLE_ENTITY, "invalid_timezone"),
         AuthError::InvalidCredentials => (StatusCode::UNAUTHORIZED, "invalid_credentials"),
-        AuthError::Hash(_) | AuthError::Db(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
+        AuthError::Hash(_) | AuthError::Db(_) | AuthError::Kv(_) => {
+            (StatusCode::INTERNAL_SERVER_ERROR, "internal")
+        }
     };
     return (status, Json(serde_json::json!({ "error": code }))).into_response();
 }

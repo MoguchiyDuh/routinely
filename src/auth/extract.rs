@@ -5,7 +5,7 @@ use axum::http::request::Parts;
 use axum::response::IntoResponse;
 use axum::response::Redirect;
 use axum::response::Response;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use thiserror::Error;
 
 use crate::app::AppState;
@@ -64,7 +64,7 @@ impl FromRequestParts<AppState> for ApiAuth {
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
         let token = token_from_parts(parts).ok_or(ApiAuthError::Unauthorized)?;
-        let user = session::find_user_by_token(&state.pool, &token)
+        let user = session::find_user_by_token(&state.pool, &state.kv, &token)
             .await
             .map_err(|_| ApiAuthError::Internal)?;
         let Some(user) = user else {
@@ -85,7 +85,7 @@ impl FromRequestParts<AppState> for PageAuth {
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
         let token = token_from_parts(parts).ok_or(PageAuthError::Unauthorized)?;
-        let user = session::find_user_by_token(&state.pool, &token)
+        let user = session::find_user_by_token(&state.pool, &state.kv, &token)
             .await
             .map_err(|_| PageAuthError::Internal)?;
         let Some(mut user) = user else {
@@ -102,11 +102,11 @@ impl FromRequestParts<AppState> for PageAuth {
     }
 }
 
-async fn run_eval_hook(pool: &SqlitePool, user: &SessionUser) -> Result<(), sqlx::Error> {
+async fn run_eval_hook(pool: &PgPool, user: &SessionUser) -> Result<(), sqlx::Error> {
     let today = store::user_today(&user.timezone);
     let today_str = today.to_string();
     let row: Option<(Option<String>,)> =
-        sqlx::query_as("SELECT last_evaluated_day FROM users WHERE id = ?")
+        sqlx::query_as("SELECT last_evaluated_day FROM users WHERE id = $1")
             .bind(user.id)
             .fetch_optional(pool)
             .await?;

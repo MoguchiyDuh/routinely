@@ -7,7 +7,7 @@ use axum::extract::State;
 use axum::routing::get;
 use chrono::NaiveDate;
 use serde::Serialize;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 
 use crate::app::AppState;
 use crate::auth::extract::ApiAuth;
@@ -255,11 +255,11 @@ async fn api_profile(
 }
 
 async fn build_profile(
-    pool: &SqlitePool,
+    pool: &PgPool,
     user_id: i64,
 ) -> Result<Option<ProfileData>, sqlx::Error> {
     let row: Option<(i64, String, String, String)> =
-        sqlx::query_as("SELECT id, username, timezone, created_at FROM users WHERE id = ?")
+        sqlx::query_as("SELECT id, username, timezone, created_at FROM users WHERE id = $1")
             .bind(user_id)
             .fetch_optional(pool)
             .await?;
@@ -362,11 +362,11 @@ fn schedule_json(routine: &store::RoutineRow) -> ScheduleJson {
 }
 
 async fn punishment_counts(
-    pool: &SqlitePool,
+    pool: &PgPool,
     user_id: i64,
 ) -> Result<PunishmentCountsJson, sqlx::Error> {
     let rows: Vec<(String, i64)> = sqlx::query_as(
-        "SELECT status, COUNT(*) FROM punishments WHERE user_id = ? GROUP BY status",
+        "SELECT status, COUNT(*) FROM punishments WHERE user_id = $1 GROUP BY status",
     )
     .bind(user_id)
     .fetch_all(pool)
@@ -388,14 +388,14 @@ async fn punishment_counts(
     return Ok(counts);
 }
 
-async fn recent_pins(pool: &SqlitePool, user_id: i64) -> Result<Vec<ProfilePinJson>, sqlx::Error> {
+async fn recent_pins(pool: &PgPool, user_id: i64) -> Result<Vec<ProfilePinJson>, sqlx::Error> {
     let rows: Vec<(i64, i64, String, String)> = sqlx::query_as(
         "SELECT p.id, o.id, o.due_date, p.summary \
          FROM pins p \
          JOIN completions c ON c.id = p.completion_id \
          JOIN occurrences o ON o.id = c.occurrence_id \
          JOIN routines r ON r.id = o.routine_id \
-         WHERE r.user_id = ? \
+         WHERE r.user_id = $1 \
          ORDER BY p.created_at DESC, p.id DESC \
          LIMIT 10",
     )

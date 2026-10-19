@@ -1,7 +1,7 @@
+mod common;
+
 use std::net::SocketAddr;
 use std::time::Duration;
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
 
 use chrono::Datelike;
 use chrono::Days;
@@ -9,12 +9,11 @@ use chrono::NaiveDate;
 use chrono::Utc;
 use chrono::Weekday;
 use serde_json::Value;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 
 use routinely::app::AppState;
-use routinely::config::Config;
 use routinely::db;
 use routinely::recurrence::PeriodKind;
 use routinely::recurrence::Schedule;
@@ -27,7 +26,7 @@ const PASSWORD: &str = "password123";
 
 struct Server {
     addr: SocketAddr,
-    pool: SqlitePool,
+    pool: PgPool,
 }
 
 #[derive(Debug)]
@@ -64,27 +63,12 @@ impl HttpResponse {
     }
 }
 
-async fn setup(name: &str) -> Server {
-    let unique = format!(
-        "routinely-leaderboard-{name}-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    );
-    let dir = std::env::temp_dir().join(unique);
-    std::fs::create_dir_all(&dir).unwrap();
-    let config = Config {
-        db_path: dir.join("leaderboard.db"),
-        bind: "127.0.0.1:0".parse().unwrap(),
-        signup_code: SIGNUP_CODE.to_string(),
-        session_ttl: Duration::from_secs(600),
-        cookie_secure: false,
-    };
+async fn setup(_name: &str) -> Server {
+    let config = common::config(SIGNUP_CODE, Duration::from_secs(600)).await;
     let pool = db::init(&config).await.unwrap();
     let state = AppState {
         pool: pool.clone(),
+        kv: common::kv(&config).await,
         config: config.clone(),
     };
     let router = routinely::app::build_router(state);
@@ -195,7 +179,7 @@ async fn create_routine(server: &Server, token: &str, payload: Value) -> i64 {
 }
 
 async fn backdate_start(server: &Server, routine_id: i64, date: NaiveDate) {
-    sqlx::query("UPDATE routines SET start_date = ? WHERE id = ?")
+    sqlx::query("UPDATE routines SET start_date = $1 WHERE id = $2")
         .bind(date.to_string())
         .bind(routine_id)
         .execute(&server.pool)
@@ -258,7 +242,7 @@ async fn profile_json(server: &Server, token: &str, user_id: i64) -> Value {
 }
 
 async fn user_id_by_name(server: &Server, username: &str) -> i64 {
-    let (id,): (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = ?")
+    let (id,): (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = $1")
         .bind(username)
         .fetch_one(&server.pool)
         .await
@@ -270,7 +254,7 @@ async fn add_punishments(server: &Server, user_id: i64, status: &str, count: usi
     for _ in 0..count {
         sqlx::query(
             "INSERT INTO punishments (user_id, catalog_id, custom_title, source, status, occurrence_id, assigned_at, cleared_at) \
-             VALUES (?, NULL, 'test punishment', 'manual', ?, NULL, ?, NULL)",
+             VALUES ($1, NULL, 'test punishment', 'manual', $2, NULL, $3, NULL)",
         )
         .bind(user_id)
         .bind(status)
@@ -577,7 +561,7 @@ async fn profile_details_pin_cap_and_404() {
     pin_occurrence(&server, &token, new_occurrence, "new pin").await;
 
     let user_id = user_id_by_name(&server, "profiled").await;
-    sqlx::query("UPDATE users SET created_at = '2024-01-02T03:04:05+00:00' WHERE id = ?")
+    sqlx::query("UPDATE users SET created_at = '2024-01-02T03:04:05+00:00' WHERE id = $1")
         .bind(user_id)
         .execute(&server.pool)
         .await
@@ -587,7 +571,7 @@ async fn profile_details_pin_cap_and_404() {
     add_punishments(&server, user_id, "waived", 1).await;
     let (pin_id,): (i64,) = sqlx::query_as(
         "SELECT p.id FROM pins p JOIN completions c ON c.id = p.completion_id \
-         WHERE c.occurrence_id = ?",
+         WHERE c.occurrence_id = $1",
     )
     .bind(new_occurrence)
     .fetch_one(&server.pool)
@@ -595,7 +579,7 @@ async fn profile_details_pin_cap_and_404() {
     .unwrap();
     sqlx::query(
         "INSERT INTO attachments (pin_id, kind, url, file_path, created_at) \
-         VALUES (?, 'photo', NULL, 'profilethumb.png', ?)",
+         VALUES ($1, 'photo', NULL, 'profilethumb.png', $2)",
     )
     .bind(pin_id)
     .bind(Utc::now().to_rfc3339())
@@ -848,8 +832,8 @@ async fn json_twins_shapes_and_unauth() {
     assert_eq!(unauth_profile_api.status, 401);
 }
 
-async fn seed_tick(pool: &SqlitePool, routine_id: i64, date: NaiveDate) -> i64 {
-    let (user_id,): (i64,) = sqlx::query_as("SELECT user_id FROM routines WHERE id = ?")
+async fn seed_tick(pool: &PgPool, routine_id: i64, date: NaiveDate) -> i64 {
+    let (user_id,): (i64,) = sqlx::query_as("SELECT user_id FROM routines WHERE id = $1")
         .bind(routine_id)
         .fetch_one(pool)
         .await

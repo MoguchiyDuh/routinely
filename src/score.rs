@@ -6,7 +6,7 @@ use chrono::Datelike;
 use chrono::Days;
 use chrono::NaiveDate;
 use chrono::Weekday;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 
 use crate::recurrence::PeriodKind;
 use crate::recurrence::Schedule;
@@ -69,7 +69,7 @@ pub fn window_start(today: NaiveDate, days: u64) -> Option<NaiveDate> {
 }
 
 pub async fn stats_for_user(
-    pool: &SqlitePool,
+    pool: &PgPool,
     user_id: i64,
     timezone: &str,
     routines: &[store::RoutineRow],
@@ -95,7 +95,7 @@ pub async fn stats_for_user(
 }
 
 pub async fn routine_window_pcts(
-    pool: &SqlitePool,
+    pool: &PgPool,
     user_id: i64,
     timezone: &str,
     routines: &[store::RoutineRow],
@@ -119,7 +119,7 @@ pub async fn routine_window_pcts(
     return Ok(out);
 }
 
-pub async fn leaderboard_rows(pool: &SqlitePool) -> Result<Vec<LeaderRow>, sqlx::Error> {
+pub async fn leaderboard_rows(pool: &PgPool) -> Result<Vec<LeaderRow>, sqlx::Error> {
     let users: Vec<(i64, String, String)> =
         sqlx::query_as("SELECT id, username, timezone FROM users ORDER BY id")
             .fetch_all(pool)
@@ -202,7 +202,7 @@ fn compare_streak(a: Option<u64>, b: Option<u64>) -> Ordering {
     };
 }
 
-async fn pending_counts(pool: &SqlitePool) -> Result<HashMap<i64, u64>, sqlx::Error> {
+async fn pending_counts(pool: &PgPool) -> Result<HashMap<i64, u64>, sqlx::Error> {
     let rows: Vec<(i64, i64)> = sqlx::query_as(
         "SELECT user_id, COUNT(*) FROM punishments WHERE status = 'pending' GROUP BY user_id",
     )
@@ -216,7 +216,7 @@ async fn pending_counts(pool: &SqlitePool) -> Result<HashMap<i64, u64>, sqlx::Er
 }
 
 async fn satisfied_weekdays(
-    pool: &SqlitePool,
+    pool: &PgPool,
     user_id: i64,
     since: NaiveDate,
     until_exclusive: NaiveDate,
@@ -226,8 +226,8 @@ async fn satisfied_weekdays(
          FROM completions c \
          JOIN occurrences o ON o.id = c.occurrence_id \
          JOIN routines r ON r.id = o.routine_id \
-         WHERE r.user_id = ? AND r.archived_at IS NULL \
-           AND o.period_start IS NULL AND o.due_date >= ? AND o.due_date < ?",
+         WHERE r.user_id = $1 AND r.archived_at IS NULL \
+           AND o.period_start IS NULL AND o.due_date >= $2 AND o.due_date < $3",
     )
     .bind(user_id)
     .bind(since.to_string())
@@ -245,7 +245,7 @@ async fn satisfied_weekdays(
 }
 
 async fn period_counts(
-    pool: &SqlitePool,
+    pool: &PgPool,
     user_id: i64,
 ) -> Result<HashMap<(i64, String), u32>, sqlx::Error> {
     let rows: Vec<(i64, String, i64)> = sqlx::query_as(
@@ -253,7 +253,7 @@ async fn period_counts(
          FROM completions c \
          JOIN occurrences o ON o.id = c.occurrence_id \
          JOIN routines r ON r.id = o.routine_id \
-         WHERE r.user_id = ? AND r.archived_at IS NULL AND o.period_start IS NOT NULL \
+         WHERE r.user_id = $1 AND r.archived_at IS NULL AND o.period_start IS NOT NULL \
          GROUP BY o.routine_id, o.period_start",
     )
     .bind(user_id)
@@ -466,7 +466,7 @@ pub fn heatmap_level(done: u32, expected: u32) -> u8 {
 }
 
 pub async fn heatmap(
-    pool: &SqlitePool,
+    pool: &PgPool,
     user_id: i64,
     timezone: &str,
 ) -> Result<Vec<HeatDay>, sqlx::Error> {
@@ -546,7 +546,7 @@ fn routine_coverage(routine: &store::RoutineRow, date: NaiveDate) -> RoutineCove
 }
 
 async fn completions_by_day(
-    pool: &SqlitePool,
+    pool: &PgPool,
     user_id: i64,
 ) -> Result<HashMap<(i64, NaiveDate), u32>, sqlx::Error> {
     let rows: Vec<(i64, String, i64)> = sqlx::query_as(
@@ -554,7 +554,7 @@ async fn completions_by_day(
          FROM completions c \
          JOIN occurrences o ON o.id = c.occurrence_id \
          JOIN routines r ON r.id = o.routine_id \
-         WHERE r.user_id = ? \
+         WHERE r.user_id = $1 \
          GROUP BY o.routine_id, o.due_date",
     )
     .bind(user_id)

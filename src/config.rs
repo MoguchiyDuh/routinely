@@ -1,14 +1,13 @@
 use std::env;
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use std::time::Duration;
 
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ConfigError {
-    #[error("environment variable ROUTINELY_SIGNUP_CODE is not set")]
-    MissingSignupCode,
+    #[error("environment variable {var} is not set")]
+    Missing { var: &'static str },
     #[error("environment variable {var} has an invalid value")]
     InvalidValue {
         var: &'static str,
@@ -19,7 +18,9 @@ pub enum ConfigError {
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub db_path: PathBuf,
+    pub database_url: String,
+    pub valkey_url: String,
+    pub valkey_prefix: String,
     pub bind: SocketAddr,
     pub signup_code: String,
     pub session_ttl: Duration,
@@ -28,9 +29,11 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> Result<Self, ConfigError> {
-        let db_path = match env::var("ROUTINELY_DB_PATH") {
-            Ok(value) => PathBuf::from(value),
-            Err(_) => PathBuf::from("data/routinely.db"),
+        let database_url = required("ROUTINELY_DATABASE_URL")?;
+        let valkey_url = required("ROUTINELY_VALKEY_URL")?;
+        let valkey_prefix = match env::var("ROUTINELY_VALKEY_PREFIX") {
+            Ok(value) => value,
+            Err(_) => "routinely:".to_string(),
         };
         let bind = match env::var("ROUTINELY_BIND") {
             Ok(value) => match value.parse::<SocketAddr>() {
@@ -44,10 +47,7 @@ impl Config {
             },
             Err(_) => SocketAddr::from(([127, 0, 0, 1], 8080)),
         };
-        let signup_code = match env::var("ROUTINELY_SIGNUP_CODE") {
-            Ok(value) => value,
-            Err(_) => return Err(ConfigError::MissingSignupCode),
-        };
+        let signup_code = required("ROUTINELY_SIGNUP_CODE")?;
         let session_ttl = match env::var("ROUTINELY_SESSION_TTL_SECS") {
             Ok(value) => match value.parse::<u64>() {
                 Ok(secs) => Duration::from_secs(secs),
@@ -73,11 +73,17 @@ impl Config {
             Err(_) => false,
         };
         return Ok(Self {
-            db_path,
+            database_url,
+            valkey_url,
+            valkey_prefix,
             bind,
             signup_code,
             session_ttl,
             cookie_secure,
         });
     }
+}
+
+fn required(var: &'static str) -> Result<String, ConfigError> {
+    return env::var(var).map_err(|_| ConfigError::Missing { var });
 }

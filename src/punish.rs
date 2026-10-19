@@ -1,7 +1,7 @@
 use chrono::NaiveDate;
 use chrono::Utc;
-use sqlx::SqlitePool;
-use sqlx::sqlite::SqliteConnection;
+use sqlx::PgPool;
+use sqlx::PgConnection;
 
 use crate::auth::session::SessionUser;
 use crate::recurrence::ScheduleKind;
@@ -156,7 +156,7 @@ pub fn valid_title(raw: &str) -> bool {
     return (1..=200).contains(&len);
 }
 
-pub async fn seed_catalog_if_empty(pool: &SqlitePool, user_id: i64) -> Result<(), sqlx::Error> {
+pub async fn seed_catalog_if_empty(pool: &PgPool, user_id: i64) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
     let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM punishment_catalog")
         .fetch_one(&mut *tx)
@@ -168,7 +168,7 @@ pub async fn seed_catalog_if_empty(pool: &SqlitePool, user_id: i64) -> Result<()
     let now = Utc::now().to_rfc3339();
     for title in SEED_TITLES {
         sqlx::query(
-            "INSERT INTO punishment_catalog (title, description, active, created_by, created_at) VALUES (?, NULL, 1, ?, ?)",
+            "INSERT INTO punishment_catalog (title, description, active, created_by, created_at) VALUES ($1, NULL, 1, $2, $3)",
         )
         .bind(title)
         .bind(user_id)
@@ -180,7 +180,7 @@ pub async fn seed_catalog_if_empty(pool: &SqlitePool, user_id: i64) -> Result<()
     return Ok(());
 }
 
-pub async fn list_catalog(pool: &SqlitePool) -> Result<Vec<CatalogItem>, sqlx::Error> {
+pub async fn list_catalog(pool: &PgPool) -> Result<Vec<CatalogItem>, sqlx::Error> {
     let rows: Vec<CatalogRecord> = sqlx::query_as(
         "SELECT id, title, description, active, created_by, created_at FROM punishment_catalog ORDER BY id",
     )
@@ -190,13 +190,13 @@ pub async fn list_catalog(pool: &SqlitePool) -> Result<Vec<CatalogItem>, sqlx::E
 }
 
 pub async fn add_catalog_item(
-    pool: &SqlitePool,
+    pool: &PgPool,
     created_by: i64,
     title: &str,
     description: Option<&str>,
 ) -> Result<i64, sqlx::Error> {
     let id: i64 = sqlx::query_scalar(
-        "INSERT INTO punishment_catalog (title, description, active, created_by, created_at) VALUES (?, ?, 1, ?, ?) RETURNING id",
+        "INSERT INTO punishment_catalog (title, description, active, created_by, created_at) VALUES ($1, $2, 1, $3, $4) RETURNING id",
     )
     .bind(title.trim())
     .bind(description.map(str::trim).filter(|d| !d.is_empty()))
@@ -208,11 +208,11 @@ pub async fn add_catalog_item(
 }
 
 pub async fn set_catalog_active(
-    pool: &SqlitePool,
+    pool: &PgPool,
     id: i64,
     active: bool,
 ) -> Result<bool, sqlx::Error> {
-    let result = sqlx::query("UPDATE punishment_catalog SET active = ? WHERE id = ?")
+    let result = sqlx::query("UPDATE punishment_catalog SET active = $1 WHERE id = $2")
         .bind(i64::from(active))
         .bind(id)
         .execute(pool)
@@ -220,16 +220,16 @@ pub async fn set_catalog_active(
     return Ok(result.rows_affected() > 0);
 }
 
-pub async fn catalog_active(pool: &SqlitePool, id: i64) -> Result<Option<bool>, sqlx::Error> {
-    let row: Option<(i64,)> = sqlx::query_as("SELECT active FROM punishment_catalog WHERE id = ?")
+pub async fn catalog_active(pool: &PgPool, id: i64) -> Result<Option<bool>, sqlx::Error> {
+    let row: Option<(i64,)> = sqlx::query_as("SELECT active FROM punishment_catalog WHERE id = $1")
         .bind(id)
         .fetch_optional(pool)
         .await?;
     return Ok(row.map(|(active,)| active != 0));
 }
 
-pub async fn user_exists(pool: &SqlitePool, id: i64) -> Result<bool, sqlx::Error> {
-    let row: Option<(i64,)> = sqlx::query_as("SELECT id FROM users WHERE id = ?")
+pub async fn user_exists(pool: &PgPool, id: i64) -> Result<bool, sqlx::Error> {
+    let row: Option<(i64,)> = sqlx::query_as("SELECT id FROM users WHERE id = $1")
         .bind(id)
         .fetch_optional(pool)
         .await?;
@@ -237,7 +237,7 @@ pub async fn user_exists(pool: &SqlitePool, id: i64) -> Result<bool, sqlx::Error
 }
 
 pub async fn manual_assign(
-    pool: &SqlitePool,
+    pool: &PgPool,
     target_user: i64,
     target: AssignTarget,
 ) -> Result<i64, sqlx::Error> {
@@ -245,7 +245,7 @@ pub async fn manual_assign(
         AssignTarget::Catalog(catalog_id) => {
             sqlx::query_scalar(
                 "INSERT INTO punishments (user_id, catalog_id, custom_title, source, status, occurrence_id, assigned_at, cleared_at) \
-                 VALUES (?, ?, NULL, 'manual', 'pending', NULL, ?, NULL) RETURNING id",
+                 VALUES ($1, $2, NULL, 'manual', 'pending', NULL, $3, NULL) RETURNING id",
             )
             .bind(target_user)
             .bind(catalog_id)
@@ -256,7 +256,7 @@ pub async fn manual_assign(
         AssignTarget::Custom(title) => {
             sqlx::query_scalar(
                 "INSERT INTO punishments (user_id, catalog_id, custom_title, source, status, occurrence_id, assigned_at, cleared_at) \
-                 VALUES (?, NULL, ?, 'manual', 'pending', NULL, ?, NULL) RETURNING id",
+                 VALUES ($1, NULL, $2, 'manual', 'pending', NULL, $3, NULL) RETURNING id",
             )
             .bind(target_user)
             .bind(title.trim())
@@ -269,14 +269,14 @@ pub async fn manual_assign(
 }
 
 pub async fn close_punishment(
-    pool: &SqlitePool,
+    pool: &PgPool,
     user_id: i64,
     punishment_id: i64,
     waive: bool,
 ) -> Result<PunishOutcome, sqlx::Error> {
     let status = if waive { "waived" } else { "cleared" };
     let result = sqlx::query(
-        "UPDATE punishments SET status = ?, cleared_at = ? WHERE id = ? AND user_id = ? AND status = 'pending'",
+        "UPDATE punishments SET status = $1, cleared_at = $2 WHERE id = $3 AND user_id = $4 AND status = 'pending'",
     )
     .bind(status)
     .bind(Utc::now().to_rfc3339())
@@ -288,7 +288,7 @@ pub async fn close_punishment(
         return Ok(PunishOutcome::Done);
     }
     let row: Option<(i64,)> =
-        sqlx::query_as("SELECT id FROM punishments WHERE id = ? AND user_id = ?")
+        sqlx::query_as("SELECT id FROM punishments WHERE id = $1 AND user_id = $2")
             .bind(punishment_id)
             .bind(user_id)
             .fetch_optional(pool)
@@ -299,9 +299,9 @@ pub async fn close_punishment(
     return Ok(PunishOutcome::Missing);
 }
 
-pub async fn pending_count(pool: &SqlitePool, user_id: i64) -> Result<u64, sqlx::Error> {
+pub async fn pending_count(pool: &PgPool, user_id: i64) -> Result<u64, sqlx::Error> {
     let (count,): (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM punishments WHERE user_id = ? AND status = 'pending'")
+        sqlx::query_as("SELECT COUNT(*) FROM punishments WHERE user_id = $1 AND status = 'pending'")
             .bind(user_id)
             .fetch_one(pool)
             .await?;
@@ -309,7 +309,7 @@ pub async fn pending_count(pool: &SqlitePool, user_id: i64) -> Result<u64, sqlx:
 }
 
 pub async fn list_punishments(
-    pool: &SqlitePool,
+    pool: &PgPool,
     user_id: i64,
     status: &str,
 ) -> Result<Vec<PunishmentItem>, sqlx::Error> {
@@ -318,7 +318,7 @@ pub async fn list_punishments(
             sqlx::query_as(
                 "SELECT p.id, p.user_id, COALESCE(c.title, p.custom_title), c.description, p.source, p.status, p.assigned_at, p.cleared_at \
                  FROM punishments p LEFT JOIN punishment_catalog c ON c.id = p.catalog_id \
-                 WHERE p.user_id = ? AND p.status = 'pending' \
+                 WHERE p.user_id = $1 AND p.status = 'pending' \
                  ORDER BY p.assigned_at ASC, p.id ASC",
             )
             .bind(user_id)
@@ -329,7 +329,7 @@ pub async fn list_punishments(
             sqlx::query_as(
                 "SELECT p.id, p.user_id, COALESCE(c.title, p.custom_title), c.description, p.source, p.status, p.assigned_at, p.cleared_at \
                  FROM punishments p LEFT JOIN punishment_catalog c ON c.id = p.catalog_id \
-                 WHERE p.user_id = ? AND p.status = ? \
+                 WHERE p.user_id = $1 AND p.status = $2 \
                  ORDER BY COALESCE(p.cleared_at, p.assigned_at) DESC, p.id DESC",
             )
             .bind(user_id)
@@ -341,7 +341,7 @@ pub async fn list_punishments(
             sqlx::query_as(
                 "SELECT p.id, p.user_id, COALESCE(c.title, p.custom_title), c.description, p.source, p.status, p.assigned_at, p.cleared_at \
                  FROM punishments p LEFT JOIN punishment_catalog c ON c.id = p.catalog_id \
-                 WHERE p.user_id = ? AND p.status IN ('cleared', 'waived') \
+                 WHERE p.user_id = $1 AND p.status IN ('cleared', 'waived') \
                  ORDER BY COALESCE(p.cleared_at, p.assigned_at) DESC, p.id DESC",
             )
             .bind(user_id)
@@ -352,7 +352,7 @@ pub async fn list_punishments(
             sqlx::query_as(
                 "SELECT p.id, p.user_id, COALESCE(c.title, p.custom_title), c.description, p.source, p.status, p.assigned_at, p.cleared_at \
                  FROM punishments p LEFT JOIN punishment_catalog c ON c.id = p.catalog_id \
-                 WHERE p.user_id = ? \
+                 WHERE p.user_id = $1 \
                  ORDER BY COALESCE(p.cleared_at, p.assigned_at) DESC, p.id DESC",
             )
             .bind(user_id)
@@ -364,7 +364,7 @@ pub async fn list_punishments(
 }
 
 pub async fn list_user_details(
-    pool: &SqlitePool,
+    pool: &PgPool,
     user_id: i64,
 ) -> Result<Vec<PunishmentDetail>, sqlx::Error> {
     let rows: Vec<PunishDetailRecord> = sqlx::query_as(
@@ -375,7 +375,7 @@ pub async fn list_user_details(
          LEFT JOIN occurrences o ON o.id = p.occurrence_id \
          LEFT JOIN routines r ON r.id = o.routine_id \
          LEFT JOIN routines pr ON pr.id = p.routine_id \
-         WHERE p.user_id = ? \
+         WHERE p.user_id = $1 \
          ORDER BY p.assigned_at ASC, p.id ASC",
     )
     .bind(user_id)
@@ -384,7 +384,7 @@ pub async fn list_user_details(
     return Ok(rows.into_iter().map(detail_from_row).collect());
 }
 
-pub async fn list_pending_details(pool: &SqlitePool) -> Result<Vec<PunishmentDetail>, sqlx::Error> {
+pub async fn list_pending_details(pool: &PgPool) -> Result<Vec<PunishmentDetail>, sqlx::Error> {
     let rows: Vec<PunishDetailRecord> = sqlx::query_as(
         "SELECT p.id, p.user_id, u.username, COALESCE(c.title, p.custom_title), c.description, p.source, p.status, p.assigned_at, p.cleared_at, COALESCE(r.title, pr.title), o.due_date, pr.period, p.period_start \
          FROM punishments p \
@@ -394,23 +394,23 @@ pub async fn list_pending_details(pool: &SqlitePool) -> Result<Vec<PunishmentDet
          LEFT JOIN routines r ON r.id = o.routine_id \
          LEFT JOIN routines pr ON pr.id = p.routine_id \
          WHERE p.status = 'pending' \
-         ORDER BY u.username COLLATE NOCASE ASC, p.assigned_at ASC, p.id ASC",
+         ORDER BY lower(u.username) ASC, p.assigned_at ASC, p.id ASC",
     )
     .fetch_all(pool)
     .await?;
     return Ok(rows.into_iter().map(detail_from_row).collect());
 }
 
-pub async fn list_members(pool: &SqlitePool) -> Result<Vec<(i64, String)>, sqlx::Error> {
+pub async fn list_members(pool: &PgPool) -> Result<Vec<(i64, String)>, sqlx::Error> {
     let rows: Vec<(i64, String)> =
-        sqlx::query_as("SELECT id, username FROM users ORDER BY username COLLATE NOCASE ASC")
+        sqlx::query_as("SELECT id, username FROM users ORDER BY lower(username) ASC")
             .fetch_all(pool)
             .await?;
     return Ok(rows);
 }
 
 pub async fn evaluate_user(
-    pool: &SqlitePool,
+    pool: &PgPool,
     user: &SessionUser,
     today: NaiveDate,
 ) -> Result<EvalStats, sqlx::Error> {
@@ -422,7 +422,7 @@ pub async fn evaluate_user(
         "SELECT o.id, o.due_date FROM occurrences o \
          JOIN routines r ON r.id = o.routine_id \
          LEFT JOIN completions c ON c.occurrence_id = o.id \
-         WHERE r.user_id = ? AND r.archived_at IS NULL AND o.period_start IS NULL AND o.due_date < ? AND c.id IS NULL \
+         WHERE r.user_id = $1 AND r.archived_at IS NULL AND o.period_start IS NULL AND o.due_date < $2 AND c.id IS NULL \
          ORDER BY o.id",
     )
     .bind(user.id)
@@ -437,8 +437,8 @@ pub async fn evaluate_user(
             None
         };
         let inserted = sqlx::query(
-            "INSERT OR IGNORE INTO punishments (user_id, catalog_id, custom_title, source, status, occurrence_id, assigned_at, cleared_at, miss_day) \
-             VALUES (?, ?, NULL, 'auto', 'pending', ?, ?, NULL, ?)",
+            "INSERT INTO punishments (user_id, catalog_id, custom_title, source, status, occurrence_id, assigned_at, cleared_at, miss_day) \
+             VALUES ($1, $2, NULL, 'auto', 'pending', $3, $4, NULL, $5) ON CONFLICT DO NOTHING",
         )
         .bind(user.id)
         .bind(catalog_id)
@@ -471,7 +471,7 @@ pub async fn evaluate_user(
             }
             let (done,): (i64,) = sqlx::query_as(
                 "SELECT COUNT(*) FROM completions c JOIN occurrences o ON o.id = c.occurrence_id \
-                 WHERE o.routine_id = ? AND o.period_start = ?",
+                 WHERE o.routine_id = $1 AND o.period_start = $2",
             )
             .bind(routine.id)
             .bind(period.period_start.to_string())
@@ -481,7 +481,7 @@ pub async fn evaluate_user(
                 continue;
             }
             let marker = sqlx::query(
-                "INSERT OR IGNORE INTO period_misses (routine_id, period_start, created_at) VALUES (?, ?, ?)",
+                "INSERT INTO period_misses (routine_id, period_start, created_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
             )
             .bind(routine.id)
             .bind(period.period_start.to_string())
@@ -501,7 +501,7 @@ pub async fn evaluate_user(
             };
             sqlx::query(
                 "INSERT INTO punishments (user_id, catalog_id, custom_title, source, status, occurrence_id, assigned_at, cleared_at, miss_day, routine_id, period_start) \
-                 VALUES (?, ?, NULL, 'auto', 'pending', NULL, ?, NULL, ?, ?, ?)",
+                 VALUES ($1, $2, NULL, 'auto', 'pending', NULL, $3, NULL, $4, $5, $6)",
             )
             .bind(user.id)
             .bind(catalog_id)
@@ -516,7 +516,7 @@ pub async fn evaluate_user(
             }
         }
     }
-    sqlx::query("UPDATE users SET last_evaluated_day = ? WHERE id = ?")
+    sqlx::query("UPDATE users SET last_evaluated_day = $1 WHERE id = $2")
         .bind(&today_str)
         .bind(user.id)
         .execute(&mut *tx)
@@ -526,12 +526,12 @@ pub async fn evaluate_user(
 }
 
 async fn auto_assigned_count(
-    conn: &mut SqliteConnection,
+    conn: &mut PgConnection,
     user_id: i64,
     miss_day: &str,
 ) -> Result<i64, sqlx::Error> {
     let (count,): (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM punishments WHERE user_id = ? AND source = 'auto' AND miss_day = ? AND catalog_id IS NOT NULL",
+        "SELECT COUNT(*) FROM punishments WHERE user_id = $1 AND source = 'auto' AND miss_day = $2 AND catalog_id IS NOT NULL",
     )
     .bind(user_id)
     .bind(miss_day)
@@ -541,13 +541,13 @@ async fn auto_assigned_count(
 }
 
 async fn draw_active_catalog(
-    conn: &mut SqliteConnection,
+    conn: &mut PgConnection,
     user_id: i64,
 ) -> Result<Option<i64>, sqlx::Error> {
     let row: Option<(i64,)> = sqlx::query_as(
         "SELECT c.id FROM punishment_catalog c \
          LEFT JOIN (SELECT catalog_id, COUNT(*) AS n FROM punishments \
-                    WHERE user_id = ? AND status = 'pending' AND catalog_id IS NOT NULL \
+                    WHERE user_id = $1 AND status = 'pending' AND catalog_id IS NOT NULL \
                     GROUP BY catalog_id) p ON p.catalog_id = c.id \
          WHERE c.active = 1 \
          ORDER BY COALESCE(p.n, 0), RANDOM() LIMIT 1",

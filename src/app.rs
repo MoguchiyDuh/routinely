@@ -1,16 +1,19 @@
 use axum::Router;
 use axum::extract::DefaultBodyLimit;
 use axum::extract::Request;
+use axum::extract::State;
+use axum::http::StatusCode;
 use axum::http::HeaderValue;
 use axum::http::header::CACHE_CONTROL;
 use axum::middleware::{self, Next};
 use axum::response::Response;
 use axum::routing::get;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use tower_http::services::ServeDir;
 
 use crate::auth::routes;
 use crate::config::Config;
+use crate::kv::Kv;
 use crate::store::UPLOADS_DIR;
 use crate::web;
 
@@ -18,12 +21,20 @@ const MAX_BODY_BYTES: usize = 12 * 1024 * 1024;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub pool: SqlitePool,
+    pub pool: PgPool,
+    pub kv: Kv,
     pub config: Config,
 }
 
-pub async fn healthz() -> &'static str {
-    return "ok";
+pub async fn healthz(State(state): State<AppState>) -> (StatusCode, &'static str) {
+    let db = sqlx::query("SELECT 1").execute(&state.pool).await;
+    if db.is_err() {
+        return (StatusCode::SERVICE_UNAVAILABLE, "database unavailable");
+    }
+    if state.kv.ping().await.is_err() {
+        return (StatusCode::SERVICE_UNAVAILABLE, "valkey unavailable");
+    }
+    return (StatusCode::OK, "ok");
 }
 
 async fn no_cache(request: Request, next: Next) -> Response {

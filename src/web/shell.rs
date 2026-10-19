@@ -6,7 +6,7 @@ use axum::middleware::Next;
 use axum::response::IntoResponse;
 use axum::response::Redirect;
 use axum::response::Response;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 
 use crate::app::AppState;
 use crate::auth::session;
@@ -78,9 +78,9 @@ impl AvatarVm {
         };
     }
 
-    pub async fn load(pool: &SqlitePool, user_id: i64) -> Result<AvatarVm, sqlx::Error> {
+    pub async fn load(pool: &PgPool, user_id: i64) -> Result<AvatarVm, sqlx::Error> {
         let row: Option<AvatarRow> = sqlx::query_as(
-            "SELECT username, avatar_path, avatar_icon, avatar_color FROM users WHERE id = ?",
+            "SELECT username, avatar_path, avatar_icon, avatar_color FROM users WHERE id = $1",
         )
         .bind(user_id)
         .fetch_optional(pool)

@@ -1,10 +1,10 @@
+mod common;
+
 use std::net::SocketAddr;
 use std::time::Duration;
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
 
 use axum::routing::get;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 
@@ -14,13 +14,15 @@ use routinely::auth::routes;
 use routinely::auth::session;
 use routinely::config::Config;
 use routinely::db;
+use routinely::kv::Kv;
 
 const SIGNUP_CODE: &str = "test-code";
 const PASSWORD: &str = "password123";
 
 struct Server {
     addr: SocketAddr,
-    pool: SqlitePool,
+    pool: PgPool,
+    kv: Kv,
     config: Config,
 }
 
@@ -54,27 +56,17 @@ impl HttpResponse {
     }
 }
 
-async fn setup(name: &str) -> Server {
-    let unique = format!(
-        "routinely-auth-{name}-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    );
-    let dir = std::env::temp_dir().join(unique);
-    std::fs::create_dir_all(&dir).unwrap();
-    let config = Config {
-        db_path: dir.join("auth.db"),
-        bind: "127.0.0.1:0".parse().unwrap(),
-        signup_code: SIGNUP_CODE.to_string(),
-        session_ttl: Duration::from_secs(60),
-        cookie_secure: false,
-    };
+async fn setup(_name: &str) -> Server {
+    let config = common::config(SIGNUP_CODE, Duration::from_secs(60)).await;
+    return serve(config).await;
+}
+
+async fn serve(config: Config) -> Server {
     let pool = db::init(&config).await.unwrap();
+    let kv = common::kv(&config).await;
     let state = AppState {
         pool: pool.clone(),
+        kv: kv.clone(),
         config: config.clone(),
     };
     let router = routinely::app::build_router(state);
@@ -83,7 +75,12 @@ async fn setup(name: &str) -> Server {
     tokio::spawn(async move {
         axum::serve(listener, router).await.unwrap();
     });
-    return Server { addr, pool, config };
+    return Server {
+        addr,
+        pool,
+        kv,
+        config,
+    };
 }
 
 async fn request(
@@ -159,17 +156,12 @@ async fn login_token(server: &Server, username: &str, password: &str) -> String 
     return response.session_token().unwrap();
 }
 
-async fn session_count(pool: &SqlitePool, token_hash: &str) -> i64 {
-    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM sessions WHERE token_hash = ?")
-        .bind(token_hash)
-        .fetch_one(pool)
-        .await
-        .unwrap();
-    return count;
+async fn session_exists(kv: &Kv, token_hash: &str) -> bool {
+    return kv.session_user(token_hash).await.unwrap().is_some();
 }
 
-async fn user_timezones(pool: &SqlitePool, username: &str) -> Vec<String> {
-    let rows: Vec<(String,)> = sqlx::query_as("SELECT timezone FROM users WHERE username = ?")
+async fn user_timezones(pool: &PgPool, username: &str) -> Vec<String> {
+    let rows: Vec<(String,)> = sqlx::query_as("SELECT timezone FROM users WHERE username = $1")
         .bind(username)
         .fetch_all(pool)
         .await
@@ -188,7 +180,7 @@ async fn signup_with_correct_code_creates_user_with_phc_hash() {
     let response = post_json(server.addr, "/api/v1/auth/signup", body).await;
     assert_eq!(response.status, 200);
     let (id, hash): (i64, String) =
-        sqlx::query_as("SELECT id, password_hash FROM users WHERE username = ?")
+        sqlx::query_as("SELECT id, password_hash FROM users WHERE username = $1")
             .bind("alice")
             .fetch_one(&server.pool)
             .await
@@ -278,7 +270,7 @@ async fn login_sets_cookie_and_me_returns_user() {
     assert!(!cookie.contains("Secure"));
     let token = response.session_token().unwrap();
     let token_hash = session::hash_token(&token);
-    assert_eq!(session_count(&server.pool, &token_hash).await, 1);
+    assert!(session_exists(&server.kv, &token_hash).await);
     let me = get_with_cookie(server.addr, "/api/v1/auth/me", &token).await;
     assert_eq!(me.status, 200);
     let payload: serde_json::Value = serde_json::from_str(&me.body).unwrap();
@@ -315,27 +307,31 @@ async fn logout_invalidates_session() {
     )
     .await;
     assert_eq!(response.status, 200);
-    assert_eq!(session_count(&server.pool, &token_hash).await, 0);
+    assert!(!session_exists(&server.kv, &token_hash).await);
     let me = get_with_cookie(server.addr, "/api/v1/auth/me", &token).await;
     assert_eq!(me.status, 401);
     assert_eq!(me.body, r#"{"error":"unauthorized"}"#);
 }
 
 #[tokio::test]
-async fn expired_session_is_purged_on_access() {
+async fn expired_session_is_rejected() {
     let server = setup("expired").await;
     signup_user(&server, "frank").await;
-    let token = login_token(&server, "frank", PASSWORD).await;
-    let token_hash = session::hash_token(&token);
-    sqlx::query("UPDATE sessions SET expires_at = ? WHERE token_hash = ?")
-        .bind("2000-01-01T00:00:00+00:00")
-        .bind(&token_hash)
-        .execute(&server.pool)
+    let (user_id,): (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = $1")
+        .bind("frank")
+        .fetch_one(&server.pool)
         .await
         .unwrap();
+    let token = session::create(&server.kv, user_id, Duration::from_secs(1))
+        .await
+        .unwrap();
+    let token_hash = session::hash_token(&token);
+    let me = get_with_cookie(server.addr, "/api/v1/auth/me", &token).await;
+    assert_eq!(me.status, 200);
+    tokio::time::sleep(Duration::from_millis(2100)).await;
     let me = get_with_cookie(server.addr, "/api/v1/auth/me", &token).await;
     assert_eq!(me.status, 401);
-    assert_eq!(session_count(&server.pool, &token_hash).await, 0);
+    assert!(!session_exists(&server.kv, &token_hash).await);
 }
 
 #[tokio::test]
@@ -343,6 +339,7 @@ async fn page_auth_redirects_to_login() {
     let server = setup("page-auth").await;
     let state = AppState {
         pool: server.pool.clone(),
+        kv: server.kv.clone(),
         config: server.config.clone(),
     };
     let router = routes::router()

@@ -1,19 +1,18 @@
+mod common;
+
 use std::net::SocketAddr;
 use std::time::Duration;
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
 
 use chrono::Datelike;
 use chrono::Days;
 use chrono::NaiveDate;
 use chrono::Utc;
 use serde_json::Value;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 
 use routinely::app::AppState;
-use routinely::config::Config;
 use routinely::db;
 
 const SIGNUP_CODE: &str = "test-code";
@@ -21,7 +20,7 @@ const PASSWORD: &str = "password123";
 
 struct Server {
     addr: SocketAddr,
-    pool: SqlitePool,
+    pool: PgPool,
 }
 
 #[derive(Debug)]
@@ -58,27 +57,12 @@ impl HttpResponse {
     }
 }
 
-async fn setup(name: &str) -> Server {
-    let unique = format!(
-        "routinely-punish-{name}-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    );
-    let dir = std::env::temp_dir().join(unique);
-    std::fs::create_dir_all(&dir).unwrap();
-    let config = Config {
-        db_path: dir.join("punish.db"),
-        bind: "127.0.0.1:0".parse().unwrap(),
-        signup_code: SIGNUP_CODE.to_string(),
-        session_ttl: Duration::from_secs(600),
-        cookie_secure: false,
-    };
+async fn setup(_name: &str) -> Server {
+    let config = common::config(SIGNUP_CODE, Duration::from_secs(600)).await;
     let pool = db::init(&config).await.unwrap();
     let state = AppState {
         pool: pool.clone(),
+        kv: common::kv(&config).await,
         config: config.clone(),
     };
     let router = routinely::app::build_router(state);
@@ -216,7 +200,7 @@ async fn catalog_ids(server: &Server) -> Vec<i64> {
 }
 
 async fn backdate_routine_start(server: &Server, routine_id: i64, date: NaiveDate) {
-    sqlx::query("UPDATE routines SET start_date = ? WHERE id = ?")
+    sqlx::query("UPDATE routines SET start_date = $1 WHERE id = $2")
         .bind(date.to_string())
         .bind(routine_id)
         .execute(&server.pool)
@@ -239,7 +223,7 @@ async fn all_weekdays_routine(server: &Server, token: &str) -> i64 {
 
 async fn insert_past_occurrence(server: &Server, routine_id: i64, due: NaiveDate) -> i64 {
     sqlx::query(
-        "INSERT INTO occurrences (routine_id, due_date, period_start, created_at) VALUES (?, ?, NULL, ?)",
+        "INSERT INTO occurrences (routine_id, due_date, period_start, created_at) VALUES ($1, $2, NULL, $3)",
     )
     .bind(routine_id)
     .bind(due.to_string())
@@ -248,7 +232,7 @@ async fn insert_past_occurrence(server: &Server, routine_id: i64, due: NaiveDate
     .await
     .unwrap();
     let (id,): (i64,) =
-        sqlx::query_as("SELECT id FROM occurrences WHERE routine_id = ? AND due_date = ?")
+        sqlx::query_as("SELECT id FROM occurrences WHERE routine_id = $1 AND due_date = $2")
             .bind(routine_id)
             .bind(due.to_string())
             .fetch_one(&server.pool)
@@ -298,7 +282,7 @@ async fn first_signup_seeds_eight_defaults_and_second_does_not_duplicate() {
     expected.sort();
     assert_eq!(names, expected, "seed titles must match the defaults");
     let (foreign,): (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM punishment_catalog WHERE created_by <> ?")
+        sqlx::query_as("SELECT COUNT(*) FROM punishment_catalog WHERE created_by <> $1")
             .bind(alice_id)
             .fetch_one(&server.pool)
             .await
@@ -327,14 +311,14 @@ async fn weekdays_miss_creates_single_pending_punishment_and_is_idempotent() {
     backdate_routine_start(&server, id, yesterday).await;
     trigger_eval(&server, &token).await;
     let (occurrence,): (i64,) =
-        sqlx::query_as("SELECT id FROM occurrences WHERE routine_id = ? AND due_date = ?")
+        sqlx::query_as("SELECT id FROM occurrences WHERE routine_id = $1 AND due_date = $2")
             .bind(id)
             .bind(yesterday.to_string())
             .fetch_one(&server.pool)
             .await
             .unwrap();
     let row: Option<(String, String, Option<i64>)> = sqlx::query_as(
-        "SELECT status, source, catalog_id FROM punishments WHERE occurrence_id = ?",
+        "SELECT status, source, catalog_id FROM punishments WHERE occurrence_id = $1",
     )
     .bind(occurrence)
     .fetch_optional(&server.pool)
@@ -383,7 +367,7 @@ async fn closed_count_period_miss_records_marker_and_punishment_idempotently() {
         "closed under-drawn period must punish once"
     );
     let (markers,): (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM period_misses WHERE routine_id = ? AND period_start = ?",
+        "SELECT COUNT(*) FROM period_misses WHERE routine_id = $1 AND period_start = $2",
     )
     .bind(id)
     .bind(prev_monday.to_string())
@@ -510,7 +494,7 @@ async fn clear_waive_conflict_and_foreign_404() {
     .await;
     assert_eq!(clear.status, 200, "clear failed: {clear:?}");
     let (status, cleared_at): (String, Option<String>) =
-        sqlx::query_as("SELECT status, cleared_at FROM punishments WHERE id = ?")
+        sqlx::query_as("SELECT status, cleared_at FROM punishments WHERE id = $1")
             .bind(p1)
             .fetch_one(&server.pool)
             .await
@@ -545,7 +529,7 @@ async fn clear_waive_conflict_and_foreign_404() {
     .await;
     assert_eq!(waive.status, 200, "waive failed: {waive:?}");
     let (status, cleared_at): (String, Option<String>) =
-        sqlx::query_as("SELECT status, cleared_at FROM punishments WHERE id = ?")
+        sqlx::query_as("SELECT status, cleared_at FROM punishments WHERE id = $1")
             .bind(p2)
             .fetch_one(&server.pool)
             .await
@@ -561,7 +545,7 @@ async fn clear_waive_conflict_and_foreign_404() {
     )
     .await;
     assert_eq!(foreign.status, 404, "mutating foreign punishment must 404");
-    let still: (String,) = sqlx::query_as("SELECT status FROM punishments WHERE id = ?")
+    let still: (String,) = sqlx::query_as("SELECT status FROM punishments WHERE id = $1")
         .bind(p3)
         .fetch_one(&server.pool)
         .await
@@ -707,7 +691,7 @@ async fn catalog_add_deactivate_activate_roundtrip_and_validation() {
     )
     .await;
     assert_eq!(off.status, 200);
-    let (active,): (i64,) = sqlx::query_as("SELECT active FROM punishment_catalog WHERE id = ?")
+    let (active,): (i64,) = sqlx::query_as("SELECT active FROM punishment_catalog WHERE id = $1")
         .bind(id)
         .fetch_one(&server.pool)
         .await
@@ -723,7 +707,7 @@ async fn catalog_add_deactivate_activate_roundtrip_and_validation() {
     .await;
     assert_eq!(on.status, 200);
     let (active_again,): (i64,) =
-        sqlx::query_as("SELECT active FROM punishment_catalog WHERE id = ?")
+        sqlx::query_as("SELECT active FROM punishment_catalog WHERE id = $1")
             .bind(id)
             .fetch_one(&server.pool)
             .await
@@ -1118,7 +1102,7 @@ async fn ssr_assign_creates_manual_penalty_and_redirects_to_everyone() {
     assert_eq!(rows[0].1, "manual", "ssr assign must be manual");
     assert_eq!(rows[0].2, "pending", "ssr assign must be pending");
     let catalog_rows: Vec<(Option<i64>,)> = sqlx::query_as(
-        "SELECT catalog_id FROM punishments WHERE user_id = ? AND catalog_id IS NOT NULL",
+        "SELECT catalog_id FROM punishments WHERE user_id = $1 AND catalog_id IS NOT NULL",
     )
     .bind(bob_id)
     .fetch_all(&server.pool)
@@ -1271,13 +1255,13 @@ async fn ssr_clear_and_waive_redirect_to_origin_tab_with_new_flash() {
         flash.contains("Penalty%20waived"),
         "flash must say the penalty was waived: {flash}"
     );
-    let (status,): (String,) = sqlx::query_as("SELECT status FROM punishments WHERE id = ?")
+    let (status,): (String,) = sqlx::query_as("SELECT status FROM punishments WHERE id = $1")
         .bind(id)
         .fetch_one(&server.pool)
         .await
         .unwrap();
     assert_eq!(status, "cleared");
-    let (status,): (String,) = sqlx::query_as("SELECT status FROM punishments WHERE id = ?")
+    let (status,): (String,) = sqlx::query_as("SELECT status FROM punishments WHERE id = $1")
         .bind(id2)
         .fetch_one(&server.pool)
         .await
@@ -1285,8 +1269,8 @@ async fn ssr_clear_and_waive_redirect_to_origin_tab_with_new_flash() {
     assert_eq!(status, "waived");
 }
 
-async fn seed_tick(pool: &SqlitePool, routine_id: i64, date: NaiveDate) -> i64 {
-    let (user_id,): (i64,) = sqlx::query_as("SELECT user_id FROM routines WHERE id = ?")
+async fn seed_tick(pool: &PgPool, routine_id: i64, date: NaiveDate) -> i64 {
+    let (user_id,): (i64,) = sqlx::query_as("SELECT user_id FROM routines WHERE id = $1")
         .bind(routine_id)
         .fetch_one(pool)
         .await

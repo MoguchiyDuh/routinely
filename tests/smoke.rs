@@ -1,15 +1,16 @@
+mod common;
+
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use routinely::app::{self, AppState};
-use routinely::config::Config;
 use routinely::db;
 
-type Server = (SocketAddr, SqlitePool, PathBuf, tokio::task::JoinHandle<()>);
+type Server = (SocketAddr, PgPool, PathBuf, tokio::task::JoinHandle<()>);
 
 async fn setup(name: &str) -> Server {
     let unique = format!(
@@ -22,16 +23,11 @@ async fn setup(name: &str) -> Server {
     );
     let dir = std::env::temp_dir().join(unique);
     std::fs::create_dir_all(&dir).unwrap();
-    let config = Config {
-        db_path: dir.join("smoke.db"),
-        bind: "127.0.0.1:0".parse().unwrap(),
-        signup_code: "smoke-code".to_string(),
-        session_ttl: Duration::from_secs(60),
-        cookie_secure: false,
-    };
+    let config = common::config("smoke-code", Duration::from_secs(60)).await;
     let pool = db::init(&config).await.unwrap();
     let state = AppState {
         pool: pool.clone(),
+        kv: common::kv(&config).await,
         config: config.clone(),
     };
     let router = app::build_router(state);
@@ -79,7 +75,7 @@ async fn migrations_and_healthz() {
 
     for table in ["users", "routines", "punishments"] {
         let (count,): (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?")
+            sqlx::query_as("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = $1")
                 .bind(table)
                 .fetch_one(&pool)
                 .await

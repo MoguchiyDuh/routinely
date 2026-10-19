@@ -3,10 +3,12 @@ pub mod password;
 pub mod routes;
 pub mod session;
 
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use thiserror::Error;
 
 use crate::config::Config;
+use crate::kv::Kv;
+use crate::kv::KvError;
 use crate::punish;
 
 use self::password::PasswordError;
@@ -35,6 +37,8 @@ pub enum AuthError {
     Hash(#[from] PasswordError),
     #[error(transparent)]
     Db(#[from] sqlx::Error),
+    #[error(transparent)]
+    Kv(#[from] KvError),
 }
 
 #[derive(Debug, Error)]
@@ -47,10 +51,12 @@ pub enum PasswordChangeError {
     Hash(#[from] PasswordError),
     #[error(transparent)]
     Db(#[from] sqlx::Error),
+    #[error(transparent)]
+    Kv(#[from] KvError),
 }
 
 pub async fn perform_signup(
-    pool: &SqlitePool,
+    pool: &PgPool,
     config: &Config,
     username: Option<String>,
     password: Option<String>,
@@ -103,7 +109,7 @@ pub async fn perform_signup(
 }
 
 pub async fn perform_login(
-    pool: &SqlitePool,
+    pool: &PgPool,
     username: Option<String>,
     password: Option<String>,
 ) -> Result<session::SessionUser, AuthError> {
@@ -129,7 +135,8 @@ pub async fn perform_login(
 }
 
 pub async fn change_password(
-    pool: &SqlitePool,
+    pool: &PgPool,
+    kv: &Kv,
     user_id: i64,
     current_token: &str,
     current_password: Option<&str>,
@@ -149,17 +156,17 @@ pub async fn change_password(
         PasswordError::Length => PasswordChangeError::InvalidNew,
         other => PasswordChangeError::Hash(other),
     })?;
-    sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?")
+    sqlx::query("UPDATE users SET password_hash = $1 WHERE id = $2")
         .bind(&new_hash)
         .bind(user_id)
         .execute(pool)
         .await?;
-    session::delete_other_sessions(pool, user_id, current_token).await?;
+    session::delete_other_sessions(kv, user_id, current_token).await?;
     return Ok(());
 }
 
 pub async fn sync_timezone(
-    pool: &SqlitePool,
+    pool: &PgPool,
     user: &mut session::SessionUser,
     raw: Option<&str>,
 ) -> Result<(), sqlx::Error> {
@@ -173,7 +180,7 @@ pub async fn sync_timezone(
     if name == user.timezone {
         return Ok(());
     }
-    sqlx::query("UPDATE users SET timezone = ? WHERE id = ?")
+    sqlx::query("UPDATE users SET timezone = $1 WHERE id = $2")
         .bind(name)
         .bind(user.id)
         .execute(pool)

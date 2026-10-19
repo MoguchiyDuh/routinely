@@ -4,8 +4,8 @@ use chrono::Datelike;
 use chrono::NaiveDate;
 use chrono::Utc;
 use chrono_tz::Tz;
-use sqlx::SqlitePool;
-use sqlx::sqlite::SqliteConnection;
+use sqlx::PgPool;
+use sqlx::PgConnection;
 
 use crate::recurrence::Schedule;
 use crate::recurrence::effective_end;
@@ -131,7 +131,7 @@ type RoutineWithUserRecord = (
 );
 
 pub async fn week_occurrences(
-    pool: &SqlitePool,
+    pool: &PgPool,
     start: NaiveDate,
     end: NaiveDate,
 ) -> Result<Vec<WeekOccurrenceRow>, sqlx::Error> {
@@ -143,7 +143,7 @@ pub async fn week_occurrences(
          JOIN users u ON u.id = r.user_id \
          LEFT JOIN completions c ON c.occurrence_id = o.id \
          LEFT JOIN pins p ON p.completion_id = c.id \
-         WHERE o.due_date >= ? AND o.due_date <= ? AND (r.archived_at IS NULL OR c.id IS NOT NULL) \
+         WHERE o.due_date >= $1 AND o.due_date <= $2 AND (r.archived_at IS NULL OR c.id IS NOT NULL) \
          ORDER BY o.due_date, o.id",
     )
     .bind(start.to_string())
@@ -185,7 +185,7 @@ pub async fn week_occurrences(
 }
 
 pub async fn active_routines_with_users(
-    pool: &SqlitePool,
+    pool: &PgPool,
 ) -> Result<Vec<RoutineWithUser>, sqlx::Error> {
     let rows: Vec<RoutineWithUserRecord> = sqlx::query_as(
         "SELECT r.id, r.user_id, r.title, r.notes, r.kind, r.weekdays_mask, r.period, r.per_period, \
@@ -251,14 +251,14 @@ type WeekTodoRecord = (
 type PinAttachmentRecord = (i64, String, Option<String>, Option<String>, Option<String>);
 
 pub async fn todos_with_deadline_between(
-    pool: &SqlitePool,
+    pool: &PgPool,
     from_utc: &str,
     until_utc_exclusive: &str,
 ) -> Result<Vec<WeekTodoRow>, sqlx::Error> {
     let rows: Vec<WeekTodoRecord> = sqlx::query_as(
         "SELECT t.id, t.user_id, t.title, t.deadline, t.completed_at, u.username, t.kind, t.all_day \
          FROM todos t JOIN users u ON u.id = t.user_id \
-         WHERE t.deadline IS NOT NULL AND t.deadline >= ? AND t.deadline < ? \
+         WHERE t.deadline IS NOT NULL AND t.deadline >= $1 AND t.deadline < $2 \
          ORDER BY t.deadline, t.id",
     )
     .bind(from_utc)
@@ -284,7 +284,7 @@ pub async fn todos_with_deadline_between(
 
 type MemberRecord = (i64, String, Option<String>, Option<String>, Option<i64>);
 
-pub async fn list_members(pool: &SqlitePool) -> Result<Vec<MemberRow>, sqlx::Error> {
+pub async fn list_members(pool: &PgPool) -> Result<Vec<MemberRow>, sqlx::Error> {
     let rows: Vec<MemberRecord> = sqlx::query_as(
         "SELECT id, username, avatar_path, avatar_icon, avatar_color FROM users ORDER BY id",
     )
@@ -305,7 +305,7 @@ pub async fn list_members(pool: &SqlitePool) -> Result<Vec<MemberRow>, sqlx::Err
 }
 
 pub async fn period_completion_counts(
-    pool: &SqlitePool,
+    pool: &PgPool,
 ) -> Result<Vec<(i64, String, i64)>, sqlx::Error> {
     let rows: Vec<(i64, String, i64)> = sqlx::query_as(
         "SELECT o.routine_id, o.period_start, COUNT(*) \
@@ -319,7 +319,7 @@ pub async fn period_completion_counts(
 }
 
 pub async fn period_completion_dates(
-    pool: &SqlitePool,
+    pool: &PgPool,
 ) -> Result<Vec<(i64, String, String)>, sqlx::Error> {
     let rows: Vec<(i64, String, String)> = sqlx::query_as(
         "SELECT o.routine_id, o.period_start, o.due_date \
@@ -333,13 +333,13 @@ pub async fn period_completion_dates(
 }
 
 pub async fn period_done_dates(
-    pool: &SqlitePool,
+    pool: &PgPool,
     routine_id: i64,
     period_start: NaiveDate,
 ) -> Result<Vec<NaiveDate>, sqlx::Error> {
     let rows: Vec<(String,)> = sqlx::query_as(
         "SELECT o.due_date FROM occurrences o JOIN completions c ON c.occurrence_id = o.id \
-         WHERE o.routine_id = ? AND o.period_start = ? ORDER BY o.due_date",
+         WHERE o.routine_id = $1 AND o.period_start = $2 ORDER BY o.due_date",
     )
     .bind(routine_id)
     .bind(period_start.to_string())
@@ -352,7 +352,7 @@ pub async fn period_done_dates(
 }
 
 pub async fn pins_for_occurrences(
-    pool: &SqlitePool,
+    pool: &PgPool,
     occurrence_ids: &[i64],
 ) -> Result<Vec<PinRow>, sqlx::Error> {
     if occurrence_ids.is_empty() {
@@ -531,13 +531,13 @@ fn routine_from_row(row: RoutineRecord) -> RoutineRow {
 }
 
 pub async fn routine_for_user(
-    pool: &SqlitePool,
+    pool: &PgPool,
     user_id: i64,
     routine_id: i64,
 ) -> Result<Option<RoutineRow>, sqlx::Error> {
     let row = sqlx::query_as::<_, RoutineRecord>(
         "SELECT id, user_id, title, notes, kind, weekdays_mask, period, per_period, iterations, start_date, end_date, time_of_day, time_end, archived_at \
-         FROM routines WHERE id = ? AND user_id = ?",
+         FROM routines WHERE id = $1 AND user_id = $2",
     )
     .bind(routine_id)
     .bind(user_id)
@@ -547,12 +547,12 @@ pub async fn routine_for_user(
 }
 
 pub async fn active_routines(
-    conn: &mut SqliteConnection,
+    conn: &mut PgConnection,
     user_id: i64,
 ) -> Result<Vec<RoutineRow>, sqlx::Error> {
     let rows = sqlx::query_as::<_, RoutineRecord>(
         "SELECT id, user_id, title, notes, kind, weekdays_mask, period, per_period, iterations, start_date, end_date, time_of_day, time_end, archived_at \
-         FROM routines WHERE user_id = ? AND archived_at IS NULL ORDER BY id",
+         FROM routines WHERE user_id = $1 AND archived_at IS NULL ORDER BY id",
     )
     .bind(user_id)
     .fetch_all(&mut *conn)
@@ -560,10 +560,10 @@ pub async fn active_routines(
     return Ok(rows.into_iter().map(routine_from_row).collect());
 }
 
-pub async fn all_routines(pool: &SqlitePool, user_id: i64) -> Result<Vec<RoutineRow>, sqlx::Error> {
+pub async fn all_routines(pool: &PgPool, user_id: i64) -> Result<Vec<RoutineRow>, sqlx::Error> {
     let rows = sqlx::query_as::<_, RoutineRecord>(
         "SELECT id, user_id, title, notes, kind, weekdays_mask, period, per_period, iterations, start_date, end_date, time_of_day, time_end, archived_at \
-         FROM routines WHERE user_id = ? ORDER BY id",
+         FROM routines WHERE user_id = $1 ORDER BY id",
     )
     .bind(user_id)
     .fetch_all(pool)
@@ -572,7 +572,7 @@ pub async fn all_routines(pool: &SqlitePool, user_id: i64) -> Result<Vec<Routine
 }
 
 pub async fn create_routine(
-    pool: &SqlitePool,
+    pool: &PgPool,
     user_id: i64,
     spec: &RoutineSpec,
 ) -> Result<i64, sqlx::Error> {
@@ -588,7 +588,7 @@ pub async fn create_routine(
     });
     let id: i64 = sqlx::query_scalar(
         "INSERT INTO routines (user_id, title, notes, kind, weekdays_mask, period, per_period, iterations, start_date, end_date, time_of_day, time_end, created_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id",
     )
     .bind(user_id)
     .bind(&spec.title)
@@ -609,11 +609,11 @@ pub async fn create_routine(
 }
 
 pub async fn archive_routine(
-    pool: &SqlitePool,
+    pool: &PgPool,
     user_id: i64,
     routine_id: i64,
 ) -> Result<bool, sqlx::Error> {
-    let result = sqlx::query("UPDATE routines SET archived_at = ? WHERE id = ? AND user_id = ?")
+    let result = sqlx::query("UPDATE routines SET archived_at = $1 WHERE id = $2 AND user_id = $3")
         .bind(Utc::now().to_rfc3339())
         .bind(routine_id)
         .bind(user_id)
@@ -651,8 +651,8 @@ fn period_to_str(period: PeriodKind) -> &'static str {
     };
 }
 
-pub async fn is_chain_head(pool: &SqlitePool, routine_id: i64) -> Result<bool, sqlx::Error> {
-    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM routines WHERE previous_id = ?")
+pub async fn is_chain_head(pool: &PgPool, routine_id: i64) -> Result<bool, sqlx::Error> {
+    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM routines WHERE previous_id = $1")
         .bind(routine_id)
         .fetch_one(pool)
         .await?;
@@ -660,12 +660,12 @@ pub async fn is_chain_head(pool: &SqlitePool, routine_id: i64) -> Result<bool, s
 }
 
 pub async fn routine_heads(
-    conn: &mut SqliteConnection,
+    conn: &mut PgConnection,
     user_id: i64,
 ) -> Result<Vec<RoutineRow>, sqlx::Error> {
     let rows = sqlx::query_as::<_, RoutineRecord>(
         "SELECT r.id, r.user_id, r.title, r.notes, r.kind, r.weekdays_mask, r.period, r.per_period, r.iterations, r.start_date, r.end_date, r.time_of_day, r.time_end, r.archived_at \
-         FROM routines r WHERE r.user_id = ? AND r.archived_at IS NULL \
+         FROM routines r WHERE r.user_id = $1 AND r.archived_at IS NULL \
          AND NOT EXISTS (SELECT 1 FROM routines s WHERE s.previous_id = r.id) ORDER BY r.id",
     )
     .bind(user_id)
@@ -675,12 +675,12 @@ pub async fn routine_heads(
 }
 
 pub async fn archived_routine_heads(
-    pool: &SqlitePool,
+    pool: &PgPool,
     user_id: i64,
 ) -> Result<Vec<RoutineRow>, sqlx::Error> {
     let rows = sqlx::query_as::<_, RoutineRecord>(
         "SELECT r.id, r.user_id, r.title, r.notes, r.kind, r.weekdays_mask, r.period, r.per_period, r.iterations, r.start_date, r.end_date, r.time_of_day, r.time_end, r.archived_at \
-         FROM routines r WHERE r.user_id = ? AND r.archived_at IS NOT NULL \
+         FROM routines r WHERE r.user_id = $1 AND r.archived_at IS NOT NULL \
          AND NOT EXISTS (SELECT 1 FROM routines s WHERE s.previous_id = r.id) ORDER BY r.id",
     )
     .bind(user_id)
@@ -689,9 +689,9 @@ pub async fn archived_routine_heads(
     return Ok(rows.into_iter().map(routine_from_row).collect());
 }
 
-pub async fn chain_child_ids(pool: &SqlitePool, user_id: i64) -> Result<Vec<i64>, sqlx::Error> {
+pub async fn chain_child_ids(pool: &PgPool, user_id: i64) -> Result<Vec<i64>, sqlx::Error> {
     let rows: Vec<(i64,)> = sqlx::query_as(
-        "SELECT previous_id FROM routines WHERE previous_id IS NOT NULL AND user_id = ?",
+        "SELECT previous_id FROM routines WHERE previous_id IS NOT NULL AND user_id = $1",
     )
     .bind(user_id)
     .fetch_all(pool)
@@ -700,7 +700,7 @@ pub async fn chain_child_ids(pool: &SqlitePool, user_id: i64) -> Result<Vec<i64>
 }
 
 pub async fn update_routine(
-    pool: &SqlitePool,
+    pool: &PgPool,
     user_id: i64,
     routine_id: i64,
     spec: &RoutineSpec,
@@ -709,7 +709,7 @@ pub async fn update_routine(
     let mut tx = pool.begin().await?;
     let row = sqlx::query_as::<_, RoutineRecord>(
         "SELECT id, user_id, title, notes, kind, weekdays_mask, period, per_period, iterations, start_date, end_date, time_of_day, time_end, archived_at \
-         FROM routines WHERE id = ?",
+         FROM routines WHERE id = $1",
     )
     .bind(routine_id)
     .fetch_optional(&mut *tx)
@@ -722,7 +722,7 @@ pub async fn update_routine(
         return Err(UpdateRoutineError::NotFound);
     }
     let (child_count,): (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM routines WHERE previous_id = ?")
+        sqlx::query_as("SELECT COUNT(*) FROM routines WHERE previous_id = $1")
             .bind(routine_id)
             .fetch_one(&mut *tx)
             .await?;
@@ -738,7 +738,7 @@ pub async fn update_routine(
         || old.end_date != spec.end_date;
     if !schedule_changed {
         sqlx::query(
-            "UPDATE routines SET title = ?, notes = ?, time_of_day = ?, time_end = ? WHERE id = ?",
+            "UPDATE routines SET title = $1, notes = $2, time_of_day = $3, time_end = $4 WHERE id = $5",
         )
         .bind(&spec.title)
         .bind(&spec.notes)
@@ -767,7 +767,7 @@ pub async fn update_routine(
     };
     if cutover <= old_start {
         sqlx::query(
-            "UPDATE routines SET title = ?, notes = ?, kind = ?, weekdays_mask = ?, period = ?, per_period = ?, iterations = ?, end_date = ?, time_of_day = ?, time_end = ? WHERE id = ?",
+            "UPDATE routines SET title = $1, notes = $2, kind = $3, weekdays_mask = $4, period = $5, per_period = $6, iterations = $7, end_date = $8, time_of_day = $9, time_end = $10 WHERE id = $11",
         )
         .bind(&spec.title)
         .bind(&spec.notes)
@@ -796,14 +796,14 @@ pub async fn update_routine(
     let Some(old_end) = old_boundary.pred_opt() else {
         return Err(UpdateRoutineError::Conflict);
     };
-    sqlx::query("UPDATE routines SET end_date = ? WHERE id = ?")
+    sqlx::query("UPDATE routines SET end_date = $1 WHERE id = $2")
         .bind(old_end.to_string())
         .bind(old.id)
         .execute(&mut *tx)
         .await?;
     let new_id: i64 = sqlx::query_scalar(
         "INSERT INTO routines (user_id, title, notes, kind, weekdays_mask, period, per_period, iterations, start_date, end_date, time_of_day, time_end, created_at, previous_id) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id",
     )
     .bind(user_id)
     .bind(&spec.title)
@@ -821,7 +821,7 @@ pub async fn update_routine(
     .bind(old.id)
     .fetch_one(&mut *tx)
     .await?;
-    sqlx::query("UPDATE occurrences SET routine_id = ? WHERE routine_id = ? AND due_date >= ?")
+    sqlx::query("UPDATE occurrences SET routine_id = $1 WHERE routine_id = $2 AND due_date >= $3")
         .bind(new_id)
         .bind(old.id)
         .bind(cutover.to_string())
@@ -830,7 +830,7 @@ pub async fn update_routine(
     let moved: Vec<(i64, String, Option<String>, bool)> = sqlx::query_as(
         "SELECT o.id, o.due_date, o.period_start, (c.id IS NOT NULL) \
          FROM occurrences o LEFT JOIN completions c ON c.occurrence_id = o.id \
-         WHERE o.routine_id = ? ORDER BY o.id",
+         WHERE o.routine_id = $1 ORDER BY o.id",
     )
     .bind(new_id)
     .fetch_all(&mut *tx)
@@ -843,13 +843,13 @@ pub async fn update_routine(
             if old.kind != new_kind {
                 if completed {
                     if period_start.is_some() {
-                        sqlx::query("UPDATE occurrences SET period_start = NULL WHERE id = ?")
+                        sqlx::query("UPDATE occurrences SET period_start = NULL WHERE id = $1")
                             .bind(occurrence_id)
                             .execute(&mut *tx)
                             .await?;
                     }
                 } else {
-                    sqlx::query("DELETE FROM occurrences WHERE id = ?")
+                    sqlx::query("DELETE FROM occurrences WHERE id = $1")
                         .bind(occurrence_id)
                         .execute(&mut *tx)
                         .await?;
@@ -859,13 +859,13 @@ pub async fn update_routine(
                 if excluded {
                     if completed {
                         if period_start.is_some() {
-                            sqlx::query("UPDATE occurrences SET period_start = NULL WHERE id = ?")
+                            sqlx::query("UPDATE occurrences SET period_start = NULL WHERE id = $1")
                                 .bind(occurrence_id)
                                 .execute(&mut *tx)
                                 .await?;
                         }
                     } else {
-                        sqlx::query("DELETE FROM occurrences WHERE id = ?")
+                        sqlx::query("DELETE FROM occurrences WHERE id = $1")
                             .bind(occurrence_id)
                             .execute(&mut *tx)
                             .await?;
@@ -880,13 +880,13 @@ pub async fn update_routine(
                 .map(|d| d.to_string());
             if period_start != expected {
                 if completed {
-                    sqlx::query("UPDATE occurrences SET period_start = ? WHERE id = ?")
+                    sqlx::query("UPDATE occurrences SET period_start = $1 WHERE id = $2")
                         .bind(expected)
                         .bind(occurrence_id)
                         .execute(&mut *tx)
                         .await?;
                 } else {
-                    sqlx::query("DELETE FROM occurrences WHERE id = ?")
+                    sqlx::query("DELETE FROM occurrences WHERE id = $1")
                         .bind(occurrence_id)
                         .execute(&mut *tx)
                         .await?;
@@ -899,7 +899,7 @@ pub async fn update_routine(
 }
 
 pub async fn materialize(
-    conn: &mut SqliteConnection,
+    conn: &mut PgConnection,
     user_id: i64,
     today: NaiveDate,
 ) -> Result<(), sqlx::Error> {
@@ -914,7 +914,7 @@ pub async fn materialize(
         }
         for date in occurrences_in_range(&schedule, schedule.start_date, today) {
             sqlx::query(
-                "INSERT OR IGNORE INTO occurrences (routine_id, due_date, period_start, created_at) VALUES (?, ?, NULL, ?)",
+                "INSERT INTO occurrences (routine_id, due_date, period_start, created_at) VALUES ($1, $2, NULL, $3) ON CONFLICT DO NOTHING",
             )
             .bind(routine.id)
             .bind(date.to_string())
@@ -943,7 +943,7 @@ fn is_scheduled_on(schedule: &Schedule, date: NaiveDate) -> bool {
 }
 
 pub async fn find_or_create_occurrence(
-    pool: &SqlitePool,
+    pool: &PgPool,
     routine: &RoutineRow,
     day: NaiveDate,
 ) -> Result<i64, sqlx::Error> {
@@ -956,7 +956,7 @@ pub async fn find_or_create_occurrence(
     };
     let now = Utc::now().to_rfc3339();
     sqlx::query(
-        "INSERT OR IGNORE INTO occurrences (routine_id, due_date, period_start, created_at) VALUES (?, ?, ?, ?)",
+        "INSERT INTO occurrences (routine_id, due_date, period_start, created_at) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
     )
     .bind(routine.id)
     .bind(day.to_string())
@@ -965,7 +965,7 @@ pub async fn find_or_create_occurrence(
     .execute(pool)
     .await?;
     let id: i64 =
-        sqlx::query_scalar("SELECT id FROM occurrences WHERE routine_id = ? AND due_date = ?")
+        sqlx::query_scalar("SELECT id FROM occurrences WHERE routine_id = $1 AND due_date = $2")
             .bind(routine.id)
             .bind(day.to_string())
             .fetch_one(pool)
@@ -974,14 +974,14 @@ pub async fn find_or_create_occurrence(
 }
 
 pub async fn tick(
-    pool: &SqlitePool,
+    pool: &PgPool,
     routine: &RoutineRow,
     day: NaiveDate,
     evidence_note: Option<&str>,
 ) -> Result<i64, sqlx::Error> {
     let occurrence_id = find_or_create_occurrence(pool, routine, day).await?;
     sqlx::query(
-        "INSERT OR IGNORE INTO completions (occurrence_id, completed_at, evidence_note) VALUES (?, ?, ?)",
+        "INSERT INTO completions (occurrence_id, completed_at, evidence_note) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
     )
     .bind(occurrence_id)
     .bind(Utc::now().to_rfc3339())
@@ -991,9 +991,9 @@ pub async fn tick(
     return Ok(occurrence_id);
 }
 
-pub async fn untick(pool: &SqlitePool, routine_id: i64, day: NaiveDate) -> Result<(), sqlx::Error> {
+pub async fn untick(pool: &PgPool, routine_id: i64, day: NaiveDate) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "DELETE FROM completions WHERE occurrence_id IN (SELECT id FROM occurrences WHERE routine_id = ? AND due_date = ?)",
+        "DELETE FROM completions WHERE occurrence_id IN (SELECT id FROM occurrences WHERE routine_id = $1 AND due_date = $2)",
     )
     .bind(routine_id)
     .bind(day.to_string())
@@ -1003,7 +1003,7 @@ pub async fn untick(pool: &SqlitePool, routine_id: i64, day: NaiveDate) -> Resul
 }
 
 pub async fn day_routines(
-    pool: &SqlitePool,
+    pool: &PgPool,
     user_id: i64,
     date: NaiveDate,
     today: NaiveDate,
@@ -1019,14 +1019,14 @@ pub async fn day_routines(
             continue;
         }
         let occurrence_id: Option<i64> =
-            sqlx::query_scalar("SELECT id FROM occurrences WHERE routine_id = ? AND due_date = ?")
+            sqlx::query_scalar("SELECT id FROM occurrences WHERE routine_id = $1 AND due_date = $2")
                 .bind(routine.id)
                 .bind(date.to_string())
                 .fetch_optional(pool)
                 .await?;
         let completion: Option<(i64, Option<String>)> = match occurrence_id {
             Some(id) => {
-                sqlx::query_as("SELECT id, evidence_note FROM completions WHERE occurrence_id = ?")
+                sqlx::query_as("SELECT id, evidence_note FROM completions WHERE occurrence_id = $1")
                     .bind(id)
                     .fetch_optional(pool)
                     .await?
@@ -1047,7 +1047,7 @@ pub async fn day_routines(
                 Some((start, _)) => {
                     let (count,): (i64,) = sqlx::query_as(
                         "SELECT COUNT(*) FROM completions c JOIN occurrences o ON o.id = c.occurrence_id \
-                         WHERE o.routine_id = ? AND o.period_start = ?",
+                         WHERE o.routine_id = $1 AND o.period_start = $2",
                     )
                     .bind(routine.id)
                     .bind(start.to_string())
@@ -1075,13 +1075,13 @@ pub async fn day_routines(
 }
 
 pub async fn occurrence_owned(
-    pool: &SqlitePool,
+    pool: &PgPool,
     user_id: i64,
     occurrence_id: i64,
 ) -> Result<bool, sqlx::Error> {
     let row: Option<(i64,)> = sqlx::query_as(
         "SELECT o.id FROM occurrences o JOIN routines r ON r.id = o.routine_id \
-         WHERE o.id = ? AND r.user_id = ?",
+         WHERE o.id = $1 AND r.user_id = $2",
     )
     .bind(occurrence_id)
     .bind(user_id)
@@ -1091,10 +1091,10 @@ pub async fn occurrence_owned(
 }
 
 pub async fn completion_id_for_occurrence(
-    pool: &SqlitePool,
+    pool: &PgPool,
     occurrence_id: i64,
 ) -> Result<Option<i64>, sqlx::Error> {
-    let row: Option<(i64,)> = sqlx::query_as("SELECT id FROM completions WHERE occurrence_id = ?")
+    let row: Option<(i64,)> = sqlx::query_as("SELECT id FROM completions WHERE occurrence_id = $1")
         .bind(occurrence_id)
         .fetch_optional(pool)
         .await?;
@@ -1102,12 +1102,12 @@ pub async fn completion_id_for_occurrence(
 }
 
 pub async fn upsert_pin(
-    pool: &SqlitePool,
+    pool: &PgPool,
     completion_id: i64,
     summary: &str,
 ) -> Result<i64, sqlx::Error> {
     sqlx::query(
-        "INSERT INTO pins (completion_id, summary, created_at) VALUES (?, ?, ?) \
+        "INSERT INTO pins (completion_id, summary, created_at) VALUES ($1, $2, $3) \
          ON CONFLICT (completion_id) DO UPDATE SET summary = excluded.summary",
     )
     .bind(completion_id)
@@ -1115,7 +1115,7 @@ pub async fn upsert_pin(
     .bind(Utc::now().to_rfc3339())
     .execute(pool)
     .await?;
-    let id: i64 = sqlx::query_scalar("SELECT id FROM pins WHERE completion_id = ?")
+    let id: i64 = sqlx::query_scalar("SELECT id FROM pins WHERE completion_id = $1")
         .bind(completion_id)
         .fetch_one(pool)
         .await?;
@@ -1123,12 +1123,12 @@ pub async fn upsert_pin(
 }
 
 pub async fn add_link_attachment(
-    pool: &SqlitePool,
+    pool: &PgPool,
     pin_id: i64,
     url: &str,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO attachments (pin_id, kind, url, file_path, created_at) VALUES (?, 'link', ?, NULL, ?)",
+        "INSERT INTO attachments (pin_id, kind, url, file_path, created_at) VALUES ($1, 'link', $2, NULL, $3)",
     )
     .bind(pin_id)
     .bind(url)
@@ -1139,12 +1139,12 @@ pub async fn add_link_attachment(
 }
 
 pub async fn add_photo_attachment(
-    pool: &SqlitePool,
+    pool: &PgPool,
     pin_id: i64,
     file_path: &str,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO attachments (pin_id, kind, url, file_path, created_at) VALUES (?, 'photo', NULL, ?, ?)",
+        "INSERT INTO attachments (pin_id, kind, url, file_path, created_at) VALUES ($1, 'photo', NULL, $2, $3)",
     )
     .bind(pin_id)
     .bind(file_path)
@@ -1155,12 +1155,12 @@ pub async fn add_photo_attachment(
 }
 
 pub async fn pin_for_occurrence(
-    pool: &SqlitePool,
+    pool: &PgPool,
     occurrence_id: i64,
 ) -> Result<Option<PinInfo>, sqlx::Error> {
     let pin: Option<(i64, String)> = sqlx::query_as(
         "SELECT p.id, p.summary FROM pins p JOIN completions c ON c.id = p.completion_id \
-         WHERE c.occurrence_id = ?",
+         WHERE c.occurrence_id = $1",
     )
     .bind(occurrence_id)
     .fetch_optional(pool)
@@ -1169,7 +1169,7 @@ pub async fn pin_for_occurrence(
         return Ok(None);
     };
     let rows: Vec<(String, Option<String>, Option<String>)> =
-        sqlx::query_as("SELECT kind, url, file_path FROM attachments WHERE pin_id = ? ORDER BY id")
+        sqlx::query_as("SELECT kind, url, file_path FROM attachments WHERE pin_id = $1 ORDER BY id")
             .bind(pin_id)
             .fetch_all(pool)
             .await?;
@@ -1192,7 +1192,7 @@ pub async fn pin_for_occurrence(
 }
 
 pub async fn create_todo(
-    pool: &SqlitePool,
+    pool: &PgPool,
     user_id: i64,
     title: &str,
     notes: Option<&str>,
@@ -1201,7 +1201,7 @@ pub async fn create_todo(
     all_day: bool,
 ) -> Result<i64, sqlx::Error> {
     let id: i64 = sqlx::query_scalar(
-        "INSERT INTO todos (user_id, title, notes, deadline, completed_at, created_at, kind, all_day) VALUES (?, ?, ?, ?, NULL, ?, ?, ?) RETURNING id",
+        "INSERT INTO todos (user_id, title, notes, deadline, completed_at, created_at, kind, all_day) VALUES ($1, $2, $3, $4, NULL, $5, $6, $7) RETURNING id",
     )
     .bind(user_id)
     .bind(title)
@@ -1216,15 +1216,15 @@ pub async fn create_todo(
 }
 
 pub async fn list_todos(
-    pool: &SqlitePool,
+    pool: &PgPool,
     user_id: i64,
     now: &str,
 ) -> Result<Vec<TodoRow>, sqlx::Error> {
     let rows: Vec<TodoRecord> = sqlx::query_as(
         "SELECT id, title, notes, deadline, completed_at, kind, all_day FROM todos \
-         WHERE user_id = ? \
+         WHERE user_id = $1 \
          ORDER BY \
-           CASE WHEN completed_at IS NULL AND deadline IS NOT NULL AND deadline < ? THEN 0 \
+           CASE WHEN completed_at IS NULL AND deadline IS NOT NULL AND deadline < $2 THEN 0 \
                 WHEN completed_at IS NULL THEN 1 \
                 ELSE 2 END, \
            CASE WHEN completed_at IS NULL AND deadline IS NULL THEN 1 ELSE 0 END, \
@@ -1250,8 +1250,8 @@ pub async fn list_todos(
         .collect());
 }
 
-pub async fn has_any_routine(pool: &SqlitePool, user_id: i64) -> Result<bool, sqlx::Error> {
-    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM routines WHERE user_id = ?")
+pub async fn has_any_routine(pool: &PgPool, user_id: i64) -> Result<bool, sqlx::Error> {
+    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM routines WHERE user_id = $1")
         .bind(user_id)
         .fetch_one(pool)
         .await?;
@@ -1259,11 +1259,11 @@ pub async fn has_any_routine(pool: &SqlitePool, user_id: i64) -> Result<bool, sq
 }
 
 pub async fn onboarding_flags(
-    pool: &SqlitePool,
+    pool: &PgPool,
     user_id: i64,
 ) -> Result<OnboardingFlags, sqlx::Error> {
     let (routine_count,): (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM routines WHERE user_id = ?")
+        sqlx::query_as("SELECT COUNT(*) FROM routines WHERE user_id = $1")
             .bind(user_id)
             .fetch_one(pool)
             .await?;
@@ -1271,7 +1271,7 @@ pub async fn onboarding_flags(
         "SELECT COUNT(*) FROM completions c \
          JOIN occurrences o ON o.id = c.occurrence_id \
          JOIN routines r ON r.id = o.routine_id \
-         WHERE r.user_id = ?",
+         WHERE r.user_id = $1",
     )
     .bind(user_id)
     .fetch_one(pool)
@@ -1281,13 +1281,13 @@ pub async fn onboarding_flags(
          JOIN completions c ON c.id = p.completion_id \
          JOIN occurrences o ON o.id = c.occurrence_id \
          JOIN routines r ON r.id = o.routine_id \
-         WHERE r.user_id = ?",
+         WHERE r.user_id = $1",
     )
     .bind(user_id)
     .fetch_one(pool)
     .await?;
     let row: Option<(Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
-        "SELECT avatar_path, avatar_icon, onboarding_dismissed_at FROM users WHERE id = ?",
+        "SELECT avatar_path, avatar_icon, onboarding_dismissed_at FROM users WHERE id = $1",
     )
     .bind(user_id)
     .fetch_optional(pool)
@@ -1302,8 +1302,8 @@ pub async fn onboarding_flags(
     });
 }
 
-pub async fn dismiss_onboarding(pool: &SqlitePool, user_id: i64) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE users SET onboarding_dismissed_at = ? WHERE id = ?")
+pub async fn dismiss_onboarding(pool: &PgPool, user_id: i64) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE users SET onboarding_dismissed_at = $1 WHERE id = $2")
         .bind(Utc::now().to_rfc3339())
         .bind(user_id)
         .execute(pool)
@@ -1312,12 +1312,12 @@ pub async fn dismiss_onboarding(pool: &SqlitePool, user_id: i64) -> Result<(), s
 }
 
 pub async fn toggle_todo(
-    pool: &SqlitePool,
+    pool: &PgPool,
     user_id: i64,
     todo_id: i64,
 ) -> Result<bool, sqlx::Error> {
     let result =
-        sqlx::query("UPDATE todos SET completed_at = CASE WHEN completed_at IS NULL THEN ? ELSE NULL END WHERE id = ? AND user_id = ?")
+        sqlx::query("UPDATE todos SET completed_at = CASE WHEN completed_at IS NULL THEN $1 ELSE NULL END WHERE id = $2 AND user_id = $3")
             .bind(Utc::now().to_rfc3339())
             .bind(todo_id)
             .bind(user_id)
@@ -1327,11 +1327,11 @@ pub async fn toggle_todo(
 }
 
 pub async fn delete_todo(
-    pool: &SqlitePool,
+    pool: &PgPool,
     user_id: i64,
     todo_id: i64,
 ) -> Result<bool, sqlx::Error> {
-    let result = sqlx::query("DELETE FROM todos WHERE id = ? AND user_id = ?")
+    let result = sqlx::query("DELETE FROM todos WHERE id = $1 AND user_id = $2")
         .bind(todo_id)
         .bind(user_id)
         .execute(pool)
@@ -1340,13 +1340,13 @@ pub async fn delete_todo(
 }
 
 pub async fn upsert_note(
-    pool: &SqlitePool,
+    pool: &PgPool,
     user_id: i64,
     day: NaiveDate,
     body: &str,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO daily_notes (user_id, day, body, updated_at) VALUES (?, ?, ?, ?) \
+        "INSERT INTO daily_notes (user_id, day, body, updated_at) VALUES ($1, $2, $3, $4) \
          ON CONFLICT (user_id, day) DO UPDATE SET body = excluded.body, updated_at = excluded.updated_at",
     )
     .bind(user_id)
@@ -1359,12 +1359,12 @@ pub async fn upsert_note(
 }
 
 pub async fn get_note(
-    pool: &SqlitePool,
+    pool: &PgPool,
     user_id: i64,
     day: NaiveDate,
 ) -> Result<Option<String>, sqlx::Error> {
     let row: Option<(String,)> =
-        sqlx::query_as("SELECT body FROM daily_notes WHERE user_id = ? AND day = ?")
+        sqlx::query_as("SELECT body FROM daily_notes WHERE user_id = $1 AND day = $2")
             .bind(user_id)
             .bind(day.to_string())
             .fetch_optional(pool)
@@ -1377,7 +1377,7 @@ const JOURNAL_LIMIT: i64 = 1000;
 pub type JournalPinRecord = (String, i64, i64, String, String);
 
 pub async fn journal_notes(
-    pool: &SqlitePool,
+    pool: &PgPool,
     user_id: i64,
     from: Option<NaiveDate>,
     to: Option<NaiveDate>,
@@ -1387,17 +1387,14 @@ pub async fn journal_notes(
     let to = to.map(|day| day.to_string());
     let rows: Vec<(String, String)> = sqlx::query_as(
         "SELECT day, body FROM daily_notes \
-         WHERE user_id = ? AND TRIM(body) != '' \
-         AND (? IS NULL OR day >= ?) AND (? IS NULL OR day <= ?) \
-         AND (? IS NULL OR body LIKE ? ESCAPE '\\') \
-         ORDER BY day DESC LIMIT ?",
+         WHERE user_id = $1 AND TRIM(body) != '' \
+         AND ($2::text IS NULL OR day >= $2) AND ($3::text IS NULL OR day <= $3) \
+         AND ($4::text IS NULL OR body ILIKE $4 ESCAPE '\\') \
+         ORDER BY day DESC LIMIT $5",
     )
     .bind(user_id)
     .bind(&from)
-    .bind(&from)
     .bind(&to)
-    .bind(&to)
-    .bind(pattern)
     .bind(pattern)
     .bind(JOURNAL_LIMIT)
     .fetch_all(pool)
@@ -1406,7 +1403,7 @@ pub async fn journal_notes(
 }
 
 pub async fn journal_pins(
-    pool: &SqlitePool,
+    pool: &PgPool,
     user_id: i64,
     from: Option<NaiveDate>,
     to: Option<NaiveDate>,
@@ -1420,18 +1417,14 @@ pub async fn journal_pins(
          JOIN completions c ON c.id = p.completion_id \
          JOIN occurrences o ON o.id = c.occurrence_id \
          JOIN routines r ON r.id = o.routine_id \
-         WHERE r.user_id = ? \
-         AND (? IS NULL OR o.due_date >= ?) AND (? IS NULL OR o.due_date <= ?) \
-         AND (? IS NULL OR p.summary LIKE ? ESCAPE '\\' OR r.title LIKE ? ESCAPE '\\') \
-         ORDER BY o.due_date DESC, o.id DESC LIMIT ?",
+         WHERE r.user_id = $1 \
+         AND ($2::text IS NULL OR o.due_date >= $2) AND ($3::text IS NULL OR o.due_date <= $3) \
+         AND ($4::text IS NULL OR p.summary ILIKE $4 ESCAPE '\\' OR r.title ILIKE $4 ESCAPE '\\') \
+         ORDER BY o.due_date DESC, o.id DESC LIMIT $5",
     )
     .bind(user_id)
     .bind(&from)
-    .bind(&from)
     .bind(&to)
-    .bind(&to)
-    .bind(pattern)
-    .bind(pattern)
     .bind(pattern)
     .bind(JOURNAL_LIMIT)
     .fetch_all(pool)

@@ -1,7 +1,7 @@
+mod common;
+
 use std::net::SocketAddr;
 use std::time::Duration;
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
 
 use chrono::Datelike;
 use chrono::Days;
@@ -11,12 +11,11 @@ use chrono::Weekday;
 use serde_json::Value;
 use sha2::Digest;
 use sha2::Sha256;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 
 use routinely::app::AppState;
-use routinely::config::Config;
 use routinely::db;
 
 const SIGNUP_CODE: &str = "test-code";
@@ -31,7 +30,7 @@ const PNG_BYTES: &[u8] = &[
 
 struct Server {
     addr: SocketAddr,
-    pool: SqlitePool,
+    pool: PgPool,
 }
 
 #[derive(Debug)]
@@ -68,27 +67,12 @@ impl HttpResponse {
     }
 }
 
-async fn setup(name: &str) -> Server {
-    let unique = format!(
-        "routinely-day-{name}-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    );
-    let dir = std::env::temp_dir().join(unique);
-    std::fs::create_dir_all(&dir).unwrap();
-    let config = Config {
-        db_path: dir.join("day.db"),
-        bind: "127.0.0.1:0".parse().unwrap(),
-        signup_code: SIGNUP_CODE.to_string(),
-        session_ttl: Duration::from_secs(600),
-        cookie_secure: false,
-    };
+async fn setup(_name: &str) -> Server {
+    let config = common::config(SIGNUP_CODE, Duration::from_secs(600)).await;
     let pool = db::init(&config).await.unwrap();
     let state = AppState {
         pool: pool.clone(),
+        kv: common::kv(&config).await,
         config: config.clone(),
     };
     let router = routinely::app::build_router(state);
@@ -262,7 +246,7 @@ async fn count_all(server: &Server, sql: &'static str) -> i64 {
 }
 
 async fn backdate_start(server: &Server, routine_id: i64, date: NaiveDate) {
-    sqlx::query("UPDATE routines SET start_date = ? WHERE id = ?")
+    sqlx::query("UPDATE routines SET start_date = $1 WHERE id = $2")
         .bind(date.to_string())
         .bind(routine_id)
         .execute(&server.pool)
@@ -297,7 +281,7 @@ async fn weekdays_routine_appears_on_matching_day_and_occurrence_persists() {
     assert_eq!(entry["kind"], "weekdays");
     assert_eq!(entry["completed"], false);
     let (count,): (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM occurrences WHERE routine_id = ? AND due_date = ?")
+        sqlx::query_as("SELECT COUNT(*) FROM occurrences WHERE routine_id = $1 AND due_date = $2")
             .bind(id)
             .bind(date.to_string())
             .fetch_one(&server.pool)
@@ -333,14 +317,14 @@ async fn count_routine_shows_progress_and_two_ticks_make_two_occurrences() {
     seed_tick(&server.pool, id, monday).await;
     let second_day = monday + Days::new(1);
     seed_tick(&server.pool, id, second_day).await;
-    let (rows,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM occurrences WHERE routine_id = ?")
+    let (rows,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM occurrences WHERE routine_id = $1")
         .bind(id)
         .fetch_one(&server.pool)
         .await
         .unwrap();
     assert_eq!(rows, 2, "expected two occurrences in the period");
     let (same_period,): (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM occurrences WHERE routine_id = ? AND period_start = ?",
+        "SELECT COUNT(*) FROM occurrences WHERE routine_id = $1 AND period_start = $2",
     )
     .bind(id)
     .bind(monday.to_string())
@@ -757,7 +741,7 @@ async fn todos_crud_ordering_and_timezone_deadline() {
     .await;
     assert_eq!(toggle.status, 200);
     let (completed_at,): (Option<String>,) =
-        sqlx::query_as("SELECT completed_at FROM todos WHERE id = ?")
+        sqlx::query_as("SELECT completed_at FROM todos WHERE id = $1")
             .bind(plain_id)
             .fetch_one(&server.pool)
             .await
@@ -773,7 +757,7 @@ async fn todos_crud_ordering_and_timezone_deadline() {
     .await;
     assert_eq!(untoggle.status, 200);
     let (cleared,): (Option<String>,) =
-        sqlx::query_as("SELECT completed_at FROM todos WHERE id = ?")
+        sqlx::query_as("SELECT completed_at FROM todos WHERE id = $1")
             .bind(plain_id)
             .fetch_one(&server.pool)
             .await
@@ -788,7 +772,7 @@ async fn todos_crud_ordering_and_timezone_deadline() {
     )
     .await;
     assert_eq!(deleted.status, 200);
-    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM todos WHERE id = ?")
+    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM todos WHERE id = $1")
         .bind(overdue_id)
         .fetch_one(&server.pool)
         .await
@@ -886,14 +870,14 @@ async fn archive_hides_routine_and_stops_materialization() {
         !page.body.contains("temporary"),
         "SSR shows archived routine"
     );
-    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM occurrences WHERE routine_id = ?")
+    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM occurrences WHERE routine_id = $1")
         .bind(id)
         .fetch_one(&server.pool)
         .await
         .unwrap();
     assert_eq!(count, 0, "archived routine must not materialize");
     let (archived_at,): (Option<String>,) =
-        sqlx::query_as("SELECT archived_at FROM routines WHERE id = ?")
+        sqlx::query_as("SELECT archived_at FROM routines WHERE id = $1")
             .bind(id)
             .fetch_one(&server.pool)
             .await
@@ -1159,7 +1143,7 @@ async fn htmx_tick_returns_routines_fragment_and_updates_state() {
     );
     let (completions,): (i64,) = sqlx::query_as(
         "SELECT COUNT(*) FROM completions c JOIN occurrences o ON o.id = c.occurrence_id \
-         WHERE o.routine_id = ?",
+         WHERE o.routine_id = $1",
     )
     .bind(id)
     .fetch_one(&server.pool)
@@ -1177,7 +1161,7 @@ async fn htmx_tick_returns_routines_fragment_and_updates_state() {
     assert_eq!(untick.status, 200, "htmx untick failed: {untick:?}");
     let (completions,): (i64,) = sqlx::query_as(
         "SELECT COUNT(*) FROM completions c JOIN occurrences o ON o.id = c.occurrence_id \
-         WHERE o.routine_id = ?",
+         WHERE o.routine_id = $1",
     )
     .bind(id)
     .fetch_one(&server.pool)
@@ -1186,8 +1170,8 @@ async fn htmx_tick_returns_routines_fragment_and_updates_state() {
     assert_eq!(completions, 0, "untick must remove the completion");
 }
 
-async fn seed_tick(pool: &SqlitePool, routine_id: i64, date: NaiveDate) -> i64 {
-    let (user_id,): (i64,) = sqlx::query_as("SELECT user_id FROM routines WHERE id = ?")
+async fn seed_tick(pool: &PgPool, routine_id: i64, date: NaiveDate) -> i64 {
+    let (user_id,): (i64,) = sqlx::query_as("SELECT user_id FROM routines WHERE id = $1")
         .bind(routine_id)
         .fetch_one(pool)
         .await

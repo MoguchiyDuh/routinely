@@ -1,14 +1,13 @@
+mod common;
+
 use std::net::SocketAddr;
 use std::time::Duration;
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
 
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 
 use routinely::app::AppState;
-use routinely::config::Config;
 use routinely::db;
 
 const SIGNUP_CODE: &str = "test-code";
@@ -16,7 +15,7 @@ const PASSWORD: &str = "password123";
 
 struct Server {
     addr: SocketAddr,
-    pool: SqlitePool,
+    pool: PgPool,
 }
 
 #[derive(Debug)]
@@ -61,27 +60,12 @@ impl HttpResponse {
     }
 }
 
-async fn setup(name: &str) -> Server {
-    let unique = format!(
-        "routinely-shell-{name}-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    );
-    let dir = std::env::temp_dir().join(unique);
-    std::fs::create_dir_all(&dir).unwrap();
-    let config = Config {
-        db_path: dir.join("shell.db"),
-        bind: "127.0.0.1:0".parse().unwrap(),
-        signup_code: SIGNUP_CODE.to_string(),
-        session_ttl: Duration::from_secs(600),
-        cookie_secure: false,
-    };
+async fn setup(_name: &str) -> Server {
+    let config = common::config(SIGNUP_CODE, Duration::from_secs(600)).await;
     let pool = db::init(&config).await.unwrap();
     let state = AppState {
         pool: pool.clone(),
+        kv: common::kv(&config).await,
         config: config.clone(),
     };
     let router = routinely::app::build_router(state);
@@ -151,7 +135,7 @@ async fn signup_user(server: &Server, username: &str) -> String {
 }
 
 async fn user_timezone(server: &Server, username: &str) -> String {
-    let (tz,): (String,) = sqlx::query_as("SELECT timezone FROM users WHERE username = ?")
+    let (tz,): (String,) = sqlx::query_as("SELECT timezone FROM users WHERE username = $1")
         .bind(username)
         .fetch_one(&server.pool)
         .await
@@ -170,7 +154,7 @@ async fn migration_adds_ui_columns_and_index() {
         ("users", "onboarding_dismissed_at"),
     ] {
         let (count,): (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?")
+            sqlx::query_as("SELECT COUNT(*) FROM information_schema.columns WHERE table_name = $1 AND column_name = $2")
                 .bind(table)
                 .bind(column)
                 .fetch_one(&server.pool)
@@ -179,7 +163,7 @@ async fn migration_adds_ui_columns_and_index() {
         assert_eq!(count, 1, "{table}.{column} missing");
     }
     let (indexes,): (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?")
+        sqlx::query_as("SELECT COUNT(*) FROM pg_indexes WHERE indexname = $1")
             .bind("idx_routines_previous")
             .fetch_one(&server.pool)
             .await

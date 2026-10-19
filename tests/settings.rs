@@ -1,8 +1,8 @@
+mod common;
+
 use std::io::Cursor;
 use std::net::SocketAddr;
 use std::time::Duration;
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
 
 use chrono::Datelike;
 use chrono::Days;
@@ -13,12 +13,11 @@ use image::GenericImageView;
 use image::ImageFormat;
 use image::ImageReader;
 use serde_json::Value;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 
 use routinely::app::AppState;
-use routinely::config::Config;
 use routinely::db;
 use routinely::score;
 
@@ -28,7 +27,8 @@ const BOUNDARY: &str = "testboundary";
 
 struct Server {
     addr: SocketAddr,
-    pool: SqlitePool,
+    pool: PgPool,
+    kv: routinely::kv::Kv,
 }
 
 #[derive(Debug)]
@@ -65,27 +65,13 @@ impl HttpResponse {
     }
 }
 
-async fn setup(name: &str) -> Server {
-    let unique = format!(
-        "routinely-settings-{name}-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    );
-    let dir = std::env::temp_dir().join(unique);
-    std::fs::create_dir_all(&dir).unwrap();
-    let config = Config {
-        db_path: dir.join("settings.db"),
-        bind: "127.0.0.1:0".parse().unwrap(),
-        signup_code: SIGNUP_CODE.to_string(),
-        session_ttl: Duration::from_secs(600),
-        cookie_secure: false,
-    };
+async fn setup(_name: &str) -> Server {
+    let config = common::config(SIGNUP_CODE, Duration::from_secs(600)).await;
     let pool = db::init(&config).await.unwrap();
+    let kv = common::kv(&config).await;
     let state = AppState {
         pool: pool.clone(),
+        kv: kv.clone(),
         config: config.clone(),
     };
     let router = routinely::app::build_router(state);
@@ -94,7 +80,7 @@ async fn setup(name: &str) -> Server {
     tokio::spawn(async move {
         axum::serve(listener, router).await.unwrap();
     });
-    return Server { addr, pool };
+    return Server { addr, pool, kv };
 }
 
 async fn request(
@@ -263,7 +249,7 @@ async fn post_multipart(
 }
 
 async fn user_id_by_name(server: &Server, username: &str) -> i64 {
-    let (id,): (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = ?")
+    let (id,): (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = $1")
         .bind(username)
         .fetch_one(&server.pool)
         .await
@@ -276,7 +262,7 @@ async fn avatar_columns(
     user_id: i64,
 ) -> (Option<String>, Option<String>, Option<i64>) {
     let row: (Option<String>, Option<String>, Option<i64>) =
-        sqlx::query_as("SELECT avatar_path, avatar_icon, avatar_color FROM users WHERE id = ?")
+        sqlx::query_as("SELECT avatar_path, avatar_icon, avatar_color FROM users WHERE id = $1")
             .bind(user_id)
             .fetch_one(&server.pool)
             .await
@@ -285,7 +271,7 @@ async fn avatar_columns(
 }
 
 async fn password_hash(server: &Server, user_id: i64) -> String {
-    let (hash,): (String,) = sqlx::query_as("SELECT password_hash FROM users WHERE id = ?")
+    let (hash,): (String,) = sqlx::query_as("SELECT password_hash FROM users WHERE id = $1")
         .bind(user_id)
         .fetch_one(&server.pool)
         .await
@@ -294,12 +280,8 @@ async fn password_hash(server: &Server, user_id: i64) -> String {
 }
 
 async fn session_count(server: &Server, user_id: i64) -> i64 {
-    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM sessions WHERE user_id = ?")
-        .bind(user_id)
-        .fetch_one(&server.pool)
-        .await
-        .unwrap();
-    return count;
+    let count = server.kv.session_count(user_id).await.unwrap();
+    return i64::try_from(count).unwrap();
 }
 
 fn image_bytes(width: u32, height: u32, format: ImageFormat) -> Vec<u8> {
@@ -701,7 +683,7 @@ async fn heatmap_completed_day_level_4_missed_day_level_1() {
     let created = json_call(&server, "POST", "/api/v1/routines", &token, payload).await;
     assert_eq!(created.status, 200, "routine create failed: {created:?}");
     let routine_id = created.json()["id"].as_i64().unwrap();
-    sqlx::query("UPDATE routines SET start_date = ? WHERE id = ?")
+    sqlx::query("UPDATE routines SET start_date = $1 WHERE id = $2")
         .bind(past(40).to_string())
         .bind(routine_id)
         .execute(&server.pool)
@@ -769,8 +751,8 @@ fn heatmap_level_boundaries() {
     assert_eq!(score::heatmap_level(4, 5), 3);
 }
 
-async fn seed_tick(pool: &SqlitePool, routine_id: i64, date: NaiveDate) -> i64 {
-    let (user_id,): (i64,) = sqlx::query_as("SELECT user_id FROM routines WHERE id = ?")
+async fn seed_tick(pool: &PgPool, routine_id: i64, date: NaiveDate) -> i64 {
+    let (user_id,): (i64,) = sqlx::query_as("SELECT user_id FROM routines WHERE id = $1")
         .bind(routine_id)
         .fetch_one(pool)
         .await
