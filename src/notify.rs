@@ -145,7 +145,7 @@ fn notification_from_record(row: NotificationRecord) -> NotificationRow {
 
 pub async fn unread_count(pool: &SqlitePool, user_id: i64) -> Result<i64, sqlx::Error> {
     let (count,): (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND read_at IS NULL")
+        sqlx::query_as("SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND read_at IS NULL AND dismissed_at IS NULL")
             .bind(user_id)
             .fetch_one(pool)
             .await?;
@@ -160,7 +160,7 @@ pub async fn list(
 ) -> Result<Vec<NotificationRow>, sqlx::Error> {
     let rows: Vec<NotificationRecord> = sqlx::query_as(
         "SELECT id, kind, title, body, url, created_at, read_at FROM notifications \
-         WHERE user_id = $1 AND ($2 IS NULL OR id < $2) ORDER BY id DESC LIMIT $3",
+         WHERE user_id = $1 AND dismissed_at IS NULL AND ($2 IS NULL OR id < $2) ORDER BY id DESC LIMIT $3",
     )
     .bind(user_id)
     .bind(before_id)
@@ -177,7 +177,7 @@ pub async fn find(
 ) -> Result<Option<NotificationRow>, sqlx::Error> {
     let row: Option<NotificationRecord> = sqlx::query_as(
         "SELECT id, kind, title, body, url, created_at, read_at FROM notifications \
-         WHERE id = $1 AND user_id = $2",
+         WHERE id = $1 AND user_id = $2 AND dismissed_at IS NULL",
     )
     .bind(notification_id)
     .bind(user_id)
@@ -192,7 +192,24 @@ pub async fn mark_read(
     notification_id: i64,
 ) -> Result<bool, sqlx::Error> {
     let result = sqlx::query(
-        "UPDATE notifications SET read_at = COALESCE(read_at, $1) WHERE id = $2 AND user_id = $3",
+        "UPDATE notifications SET read_at = COALESCE(read_at, $1) WHERE id = $2 AND user_id = $3 AND dismissed_at IS NULL",
+    )
+    .bind(Utc::now().to_rfc3339())
+    .bind(notification_id)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+    return Ok(result.rows_affected() > 0);
+}
+
+pub async fn dismiss(
+    pool: &SqlitePool,
+    user_id: i64,
+    notification_id: i64,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE notifications SET dismissed_at = $1, read_at = COALESCE(read_at, $1) \
+         WHERE id = $2 AND user_id = $3 AND dismissed_at IS NULL",
     )
     .bind(Utc::now().to_rfc3339())
     .bind(notification_id)

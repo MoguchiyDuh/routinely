@@ -17,4 +17,7 @@
 <button type="submit" class="btn btn-ghost btn-icon" aria-label="Mark {{ n.title }} read" title="Mark read">{{ ui::ico("check") }}</button>
 </form>
 {% endif %}
+<form class="notif-read" method="post" action="/notifications/{{ n.id }}/delete" hx-post="/notifications/{{ n.id }}/delete" hx-target="closest li" hx-swap="outerHTML">
+<button type="submit" class="btn btn-ghost btn-icon" aria-label="Delete {{ n.title }}" title="Delete">{{ ui::ico("trash-2") }}</button>
+</form>
 </li>

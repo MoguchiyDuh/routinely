@@ -377,6 +377,22 @@ async fn read_ssr(
     return Ok(with_trigger(html(&NotificationItem { n })?));
 }
 
+async fn delete_ssr(
+    PageAuth(auth): PageAuth,
+    State(state): State<AppState>,
+    Path(notification_id): Path<i64>,
+    headers: HeaderMap,
+) -> WebResult {
+    let found = notify::dismiss(&state.pool, auth.id, notification_id).await?;
+    if !found {
+        return Err(WebError::NotFound);
+    }
+    if !is_htmx(&headers) {
+        return Ok(Redirect::to("/notifications").into_response());
+    }
+    return Ok(with_trigger(axum::response::Html("").into_response()));
+}
+
 async fn open_ssr(
     PageAuth(auth): PageAuth,
     State(state): State<AppState>,
@@ -401,10 +417,12 @@ pub fn router() -> Router<AppState> {
         .route("/notifications/read", post(read_all_ssr))
         .route("/notifications/{id}/read", post(read_ssr))
         .route("/notifications/{id}/open", get(open_ssr))
+        .route("/notifications/{id}/delete", post(delete_ssr))
         .route("/api/v1/notifications", get(api_list))
         .route("/api/v1/notifications/unread_count", get(api_unread_count))
         .route("/api/v1/notifications/read", post(api_read_all))
         .route("/api/v1/notifications/{id}/read", post(api_read))
+        .route("/api/v1/notifications/{id}", delete(api_delete))
         .route(
             "/api/v1/notifications/prefs",
             get(api_get_prefs).put(api_put_prefs),
@@ -460,6 +478,18 @@ async fn api_read(
     Path(notification_id): Path<i64>,
 ) -> Result<axum::Json<serde_json::Value>, WebError> {
     let found = notify::mark_read(&state.pool, auth.id, notification_id).await?;
+    if !found {
+        return Err(WebError::NotFound);
+    }
+    return Ok(axum::Json(serde_json::json!({ "ok": true })));
+}
+
+async fn api_delete(
+    ApiAuth(auth): ApiAuth,
+    State(state): State<AppState>,
+    Path(notification_id): Path<i64>,
+) -> Result<axum::Json<serde_json::Value>, WebError> {
+    let found = notify::dismiss(&state.pool, auth.id, notification_id).await?;
     if !found {
         return Err(WebError::NotFound);
     }

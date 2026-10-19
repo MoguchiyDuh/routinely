@@ -72,7 +72,7 @@ Notifications are deduplicated by key, read ones are purged after 30 days, unrea
 
 UI:
 
-- Bell in the sidebar and top bar with an unread badge (polled every 60 s); `/notifications` is the inbox (newest first, unread highlighted, per-item and "Mark all read", "Load more"). Opening an item's link marks it read.
+- Bell in the sidebar and top bar with an unread badge (polled every 60 s); `/notifications` is the inbox (newest first, unread highlighted, per-item read and delete, "Mark all read", "Load more"). Opening an item's link marks it read.
 - Settings → Notifications edits every pref. Reminder defaults there apply to new routines and todos only.
 - Routine forms and the deadline form have a reminder editor (up to 5 rows: amount, unit, optional time). New forms are pre-filled with your defaults, which you can edit or remove; removing every row means no reminders. The time field appears for day/week offsets and for untimed or all-day items. Todo deadlines list their reminders in the todo list.
 
@@ -83,6 +83,7 @@ JSON API (cookie auth, under `/api/v1`):
 | GET | `/notifications?limit&before_id` |
 | GET | `/notifications/unread_count` |
 | POST | `/notifications/read`, `/notifications/{id}/read` |
+| DELETE | `/notifications/{id}` |
 | GET, PUT | `/notifications/prefs` |
 | PUT | `/me/day_start` (`day_start`: 0–6) |
 | GET | `/reminders?target_type&target_id` |
