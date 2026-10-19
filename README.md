@@ -12,7 +12,7 @@ Small self-hosted routine tracker for a group of friends. Track recurring routin
 - **Todos and deadlines**: dated tasks shown alongside routines
 - **Journal**: daily notes and proof history with text search and a per-routine filter (notes, links and photos)
 - **Penalties**: missed days and unmet goals draw from a shared catalog, max 3 per missed day; clear or waive
-- **Group**: leaderboard, profiles with heatmap, read-only view of other members' calendars
+- **Group**: leaderboard, profiles with heatmap, read-only view of other members' calendars, journals and routines; copy any member's routine into a prefilled new-routine form
 - **Reminders**: on by default, Google-Calendar-style (N minutes/hours/days/weeks before, plus a time for day/week offsets) on routines and todo deadlines, delivered to an in-app inbox
 - Server-rendered HTML with htmx; JSON API under `/api/v1`
 
@@ -30,7 +30,11 @@ mkdir data && sudo chown 1000:1000 data
 docker compose up -d
 ```
 
-The image is built by GitHub Actions and pulled from GHCR. Update with `docker compose pull && docker compose up -d`.
+CI (`.github/workflows/ci.yml`) runs fmt, clippy and tests, pushes `ghcr.io/moguchiyduh/routinely:latest` and `:sha-<short>`, then deploys over SSH. The server never builds.
+
+Deploy target: a `deploy` user whose only authorized key is `restrict,command="/usr/local/bin/deploy"`. The script accepts `<app> <latest|sha-xxxxxxx>`, then runs `docker compose pull` and `docker compose up -d --wait` in `/opt/services/<app>` with `IMAGE_TAG` set. Repo secrets: `DEPLOY_HOST`, `DEPLOY_PORT`, `DEPLOY_USER`, `DEPLOY_KEY`, `DEPLOY_KNOWN_HOSTS`.
+
+Rollback: `ssh deploy@host routinely sha-xxxxxxx`. Manual update: `docker compose pull && docker compose up -d`.
 
 Listens on `127.0.0.1:8112`; put a reverse proxy with TLS in front. State (SQLite file, sessions, uploads) lives in `./data`.
 
