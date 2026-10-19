@@ -25,8 +25,10 @@ git clone https://github.com/MoguchiyDuh/routinely.git
 cd routinely
 cp .env.example .env
 mkdir data && sudo chown 1000:1000 data
-docker compose up -d --build
+docker compose up -d
 ```
+
+The image is built by GitHub Actions and pulled from GHCR. Update with `docker compose pull && docker compose up -d`.
 
 Listens on `127.0.0.1:8112`; put a reverse proxy with TLS in front. State (SQLite file, sessions, uploads) lives in `./data`.
 
