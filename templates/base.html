@@ -21,6 +21,7 @@
 <a class="nav-item" href="/routines"{% if shell.active == "routines" %} aria-current="page"{% endif %}>{{ ui::ico("repeat") }}<span class="nav-label">Routines</span></a>
 <a class="nav-item" href="/leaderboard"{% if shell.active == "group" %} aria-current="page"{% endif %}>{{ ui::ico("users") }}<span class="nav-label">Group</span></a>
 <a class="nav-item" href="/punishments"{% if shell.active == "penalties" %} aria-current="page"{% endif %}>{{ ui::ico("gavel") }}<span class="nav-label">Penalties</span>{% if shell.pending_count > 0 %}<span class="nav-badge" aria-label="{{ shell.pending_count }} pending">{{ shell.pending_count }}</span>{% endif %}</a>
+<a class="nav-item" href="/notifications"{% if shell.active == "notifications" %} aria-current="page"{% endif %}>{{ ui::ico("bell") }}<span class="nav-label">Notifications</span>{{ ui::bell_badge(shell.unread_count, true) }}</a>
 </nav>
 <details class="menu">
 <summary class="menu-button" aria-label="Account menu">{{ ui::avatar(&shell.avatar, "md") }}<span class="menu-name">{{ shell.username }}</span>{{ ui::ico("chevron-down") }}</summary>
@@ -29,6 +30,7 @@
 </aside>
 <header class="topbar">
 <p class="topbar-title">{% block pagetitle %}{% endblock %}</p>
+<a class="topbar-bell" href="/notifications" aria-label="Notifications"{% if shell.active == "notifications" %} aria-current="page"{% endif %}>{{ ui::ico("bell") }}{{ ui::bell_badge(shell.unread_count, true) }}</a>
 <details class="menu">
 <summary class="menu-button" aria-label="Account menu">{{ ui::avatar(&shell.avatar, "sm") }}{{ ui::ico("chevron-down") }}</summary>
 {{ ui::menu_panel(shell.user_id) }}

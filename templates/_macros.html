@@ -15,6 +15,9 @@
 <form method="post" action="/logout"><button type="submit" class="menu-item">{{ ico("log-out") }}Log out</button></form>
 </div>
 {%- endmacro %}
+{% macro bell_badge(count, initial) -%}
+<span class="nav-badge bell-badge" hx-get="/notifications/badge" hx-trigger="{% if initial %}load, {% endif %}every 60s, notifications-changed from:body" hx-swap="outerHTML"{% if count == 0 %} hidden{% else %} aria-label="{{ count }} unread"{% endif %}>{% if count > 99 %}99+{% else %}{{ count }}{% endif %}</span>
+{%- endmacro %}
 {% macro status_pill(pill_class, word, icon) -%}
 <span class="pill {{ pill_class }}">{{ ico(icon) }}<span class="pill-word">{{ word }}</span></span>
 {%- endmacro %}

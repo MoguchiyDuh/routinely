@@ -2,8 +2,11 @@ use std::str::FromStr;
 
 use chrono::Datelike;
 use chrono::NaiveDate;
+use chrono::NaiveTime;
 use chrono::Utc;
 use chrono_tz::Tz;
+use serde::Deserialize;
+use serde::Serialize;
 use sqlx::SqlitePool;
 use sqlx::SqliteConnection;
 
@@ -830,6 +833,10 @@ pub async fn update_routine(
         return Err(UpdateRoutineError::Conflict);
     }
     let new_kind = kind_to_str(spec.kind);
+    let timed = spec
+        .time_of_day
+        .as_deref()
+        .is_some_and(|value| !value.trim().is_empty());
     let schedule_changed = old.kind != new_kind
         || old.weekdays_mask != spec.weekdays_mask
         || old.period != spec.period
@@ -847,6 +854,7 @@ pub async fn update_routine(
         .bind(routine_id)
         .execute(&mut *tx)
         .await?;
+        prune_invalid_reminders(&mut tx, old.id, timed).await?;
         tx.commit().await?;
         return Ok(old.id);
     }
@@ -882,6 +890,7 @@ pub async fn update_routine(
         .bind(routine_id)
         .execute(&mut *tx)
         .await?;
+        prune_invalid_reminders(&mut tx, old.id, timed).await?;
         tx.commit().await?;
         return Ok(old.id);
     }
@@ -921,6 +930,11 @@ pub async fn update_routine(
     .bind(old.id)
     .fetch_one(&mut *tx)
     .await?;
+    sqlx::query("UPDATE reminders SET target_id = $1 WHERE target_type = 'routine' AND target_id = $2")
+        .bind(new_id)
+        .bind(old.id)
+        .execute(&mut *tx)
+        .await?;
     sqlx::query("UPDATE occurrences SET routine_id = $1 WHERE routine_id = $2 AND due_date >= $3")
         .bind(new_id)
         .bind(old.id)
@@ -994,6 +1008,7 @@ pub async fn update_routine(
             }
         }
     }
+    prune_invalid_reminders(&mut tx, new_id, timed).await?;
     tx.commit().await?;
     return Ok(new_id);
 }
@@ -1551,4 +1566,372 @@ pub async fn journal_routine_titles(
     .fetch_all(pool)
     .await?;
     return Ok(rows.into_iter().map(|(title,)| title).collect());
+}
+
+pub const REMINDER_UNITS: [&str; 4] = ["minutes", "hours", "days", "weeks"];
+pub const REMINDER_TARGETS: [&str; 2] = ["routine", "todo"];
+pub const MAX_REMINDERS_PER_TARGET: usize = 5;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReminderSpec {
+    pub offset_value: i64,
+    pub offset_unit: String,
+    pub at_time: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ReminderRow {
+    pub id: i64,
+    pub target_type: String,
+    pub target_id: i64,
+    pub offset_value: i64,
+    pub offset_unit: String,
+    pub at_time: Option<String>,
+}
+
+#[derive(Debug)]
+pub enum ReminderError {
+    Invalid(&'static str),
+    NotFound,
+    Duplicate,
+    Db(sqlx::Error),
+}
+
+impl From<sqlx::Error> for ReminderError {
+    fn from(value: sqlx::Error) -> Self {
+        return ReminderError::Db(value);
+    }
+}
+
+type ReminderRecord = (i64, String, i64, i64, String, Option<String>);
+
+fn reminder_from_record(row: ReminderRecord) -> ReminderRow {
+    return ReminderRow {
+        id: row.0,
+        target_type: row.1,
+        target_id: row.2,
+        offset_value: row.3,
+        offset_unit: row.4,
+        at_time: row.5,
+    };
+}
+
+pub fn max_reminder_offset(unit: &str) -> i64 {
+    return match unit {
+        "minutes" => 40320,
+        "hours" => 672,
+        "days" => 28,
+        "weeks" => 4,
+        _ => 0,
+    };
+}
+
+pub fn normalize_reminder(spec: &ReminderSpec, timed: bool) -> Result<ReminderSpec, ReminderError> {
+    let unit = spec.offset_unit.trim();
+    if !REMINDER_UNITS.contains(&unit) {
+        return Err(ReminderError::Invalid("unknown reminder unit"));
+    }
+    if spec.offset_value < 0 || spec.offset_value > max_reminder_offset(unit) {
+        return Err(ReminderError::Invalid("reminder offset out of range"));
+    }
+    let at_time = match spec
+        .at_time
+        .as_deref()
+        .map(str::trim)
+        .filter(|raw| !raw.is_empty())
+    {
+        Some(raw) => {
+            let parsed = NaiveTime::parse_from_str(raw, "%H:%M")
+                .map_err(|_| ReminderError::Invalid("reminder time must be HH:MM"))?;
+            Some(parsed.format("%H:%M").to_string())
+        }
+        None => None,
+    };
+    let relative_on_timed = timed && matches!(unit, "minutes" | "hours");
+    if relative_on_timed && at_time.is_some() {
+        return Err(ReminderError::Invalid(
+            "reminder time is not allowed for minute or hour offsets on timed items",
+        ));
+    }
+    if !relative_on_timed && at_time.is_none() {
+        return Err(ReminderError::Invalid("reminder time is required"));
+    }
+    return Ok(ReminderSpec {
+        offset_value: spec.offset_value,
+        offset_unit: unit.to_string(),
+        at_time,
+    });
+}
+
+pub fn normalize_reminders(
+    specs: &[ReminderSpec],
+    timed: bool,
+) -> Result<Vec<ReminderSpec>, ReminderError> {
+    let mut out: Vec<ReminderSpec> = Vec::new();
+    for spec in specs {
+        let normalized = normalize_reminder(spec, timed)?;
+        if !out.contains(&normalized) {
+            out.push(normalized);
+        }
+    }
+    if out.len() > MAX_REMINDERS_PER_TARGET {
+        return Err(ReminderError::Invalid("at most 5 reminders per item"));
+    }
+    return Ok(out);
+}
+
+async fn reminder_target_timed(
+    conn: &mut SqliteConnection,
+    user_id: i64,
+    target_type: &str,
+    target_id: i64,
+) -> Result<bool, ReminderError> {
+    if target_type == "routine" {
+        let row: Option<(Option<String>,)> =
+            sqlx::query_as("SELECT time_of_day FROM routines WHERE id = $1 AND user_id = $2")
+                .bind(target_id)
+                .bind(user_id)
+                .fetch_optional(&mut *conn)
+                .await?;
+        let Some((time_of_day,)) = row else {
+            return Err(ReminderError::NotFound);
+        };
+        return Ok(time_of_day.is_some_and(|value| !value.trim().is_empty()));
+    }
+    if target_type == "todo" {
+        let row: Option<(Option<String>, i64)> =
+            sqlx::query_as("SELECT deadline, all_day FROM todos WHERE id = $1 AND user_id = $2")
+                .bind(target_id)
+                .bind(user_id)
+                .fetch_optional(&mut *conn)
+                .await?;
+        let Some((deadline, all_day)) = row else {
+            return Err(ReminderError::NotFound);
+        };
+        if deadline.is_none() {
+            return Err(ReminderError::Invalid("todo has no deadline"));
+        }
+        return Ok(all_day == 0);
+    }
+    return Err(ReminderError::Invalid("unknown reminder target"));
+}
+
+pub async fn list_user_reminders(
+    pool: &SqlitePool,
+    user_id: i64,
+    target_type: Option<&str>,
+    target_id: Option<i64>,
+) -> Result<Vec<ReminderRow>, sqlx::Error> {
+    let rows: Vec<ReminderRecord> = sqlx::query_as(
+        "SELECT id, target_type, target_id, offset_value, offset_unit, at_time FROM reminders \
+         WHERE user_id = $1 AND ($2 IS NULL OR target_type = $2) AND ($3 IS NULL OR target_id = $3) \
+         ORDER BY target_type, target_id, id",
+    )
+    .bind(user_id)
+    .bind(target_type)
+    .bind(target_id)
+    .fetch_all(pool)
+    .await?;
+    return Ok(rows.into_iter().map(reminder_from_record).collect());
+}
+
+pub async fn list_reminders_for(
+    pool: &SqlitePool,
+    user_id: i64,
+    target_type: &str,
+    target_ids: &[i64],
+) -> Result<Vec<ReminderRow>, sqlx::Error> {
+    if target_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut builder = sqlx::QueryBuilder::new(
+        "SELECT id, target_type, target_id, offset_value, offset_unit, at_time FROM reminders WHERE user_id = ",
+    );
+    builder.push_bind(user_id);
+    builder.push(" AND target_type = ");
+    builder.push_bind(target_type);
+    builder.push(" AND target_id IN (");
+    let mut separated = builder.separated(", ");
+    for id in target_ids {
+        separated.push_bind(id);
+    }
+    builder.push(") ORDER BY target_id, id");
+    let rows: Vec<ReminderRecord> = builder.build_query_as().fetch_all(pool).await?;
+    return Ok(rows.into_iter().map(reminder_from_record).collect());
+}
+
+pub async fn add_reminder(
+    pool: &SqlitePool,
+    user_id: i64,
+    target_type: &str,
+    target_id: i64,
+    spec: &ReminderSpec,
+) -> Result<i64, ReminderError> {
+    let mut tx = pool.begin().await?;
+    let timed = reminder_target_timed(&mut tx, user_id, target_type, target_id).await?;
+    let spec = normalize_reminder(spec, timed)?;
+    let existing: Vec<(i64, i64, String, Option<String>)> = sqlx::query_as(
+        "SELECT id, offset_value, offset_unit, at_time FROM reminders WHERE target_type = $1 AND target_id = $2",
+    )
+    .bind(target_type)
+    .bind(target_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    if existing.len() >= MAX_REMINDERS_PER_TARGET {
+        return Err(ReminderError::Invalid("at most 5 reminders per item"));
+    }
+    if existing.iter().any(|(_, value, unit, at_time)| {
+        *value == spec.offset_value && *unit == spec.offset_unit && *at_time == spec.at_time
+    }) {
+        return Err(ReminderError::Duplicate);
+    }
+    let id: i64 = sqlx::query_scalar(
+        "INSERT INTO reminders (user_id, target_type, target_id, offset_value, offset_unit, at_time, created_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
+    )
+    .bind(user_id)
+    .bind(target_type)
+    .bind(target_id)
+    .bind(spec.offset_value)
+    .bind(&spec.offset_unit)
+    .bind(&spec.at_time)
+    .bind(Utc::now().to_rfc3339())
+    .fetch_one(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    return Ok(id);
+}
+
+pub async fn replace_reminders(
+    pool: &SqlitePool,
+    user_id: i64,
+    target_type: &str,
+    target_id: i64,
+    specs: &[ReminderSpec],
+) -> Result<(), ReminderError> {
+    let mut tx = pool.begin().await?;
+    let timed = reminder_target_timed(&mut tx, user_id, target_type, target_id).await?;
+    let wanted = normalize_reminders(specs, timed)?;
+    let existing: Vec<(i64, i64, String, Option<String>)> = sqlx::query_as(
+        "SELECT id, offset_value, offset_unit, at_time FROM reminders WHERE target_type = $1 AND target_id = $2",
+    )
+    .bind(target_type)
+    .bind(target_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    for (id, value, unit, at_time) in &existing {
+        let keep = wanted.iter().any(|spec| {
+            spec.offset_value == *value && spec.offset_unit == *unit && spec.at_time == *at_time
+        });
+        if !keep {
+            sqlx::query("DELETE FROM reminders WHERE id = $1")
+                .bind(id)
+                .execute(&mut *tx)
+                .await?;
+        }
+    }
+    let now = Utc::now().to_rfc3339();
+    for spec in &wanted {
+        let present = existing.iter().any(|(_, value, unit, at_time)| {
+            spec.offset_value == *value && spec.offset_unit == *unit && spec.at_time == *at_time
+        });
+        if present {
+            continue;
+        }
+        sqlx::query(
+            "INSERT INTO reminders (user_id, target_type, target_id, offset_value, offset_unit, at_time, created_at) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        )
+        .bind(user_id)
+        .bind(target_type)
+        .bind(target_id)
+        .bind(spec.offset_value)
+        .bind(&spec.offset_unit)
+        .bind(&spec.at_time)
+        .bind(&now)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    return Ok(());
+}
+
+pub async fn delete_reminder(
+    pool: &SqlitePool,
+    user_id: i64,
+    reminder_id: i64,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query("DELETE FROM reminders WHERE id = $1 AND user_id = $2")
+        .bind(reminder_id)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    return Ok(result.rows_affected() > 0);
+}
+
+pub fn default_reminder_specs(
+    prefs: &crate::notify::NotificationPrefs,
+    target_type: &str,
+    timed: bool,
+) -> Vec<ReminderSpec> {
+    if !prefs.enabled {
+        return Vec::new();
+    }
+    let spec = match (target_type, timed) {
+        ("routine", true) => prefs
+            .default_routine_timed_minutes
+            .map(|minutes| ReminderSpec {
+                offset_value: minutes,
+                offset_unit: "minutes".to_string(),
+                at_time: None,
+            }),
+        ("routine", false) => prefs.default_routine_allday_enabled.then(|| ReminderSpec {
+            offset_value: 0,
+            offset_unit: "days".to_string(),
+            at_time: Some(prefs.default_routine_allday_time.clone()),
+        }),
+        ("todo", true) => prefs.default_todo_timed_minutes.map(|minutes| ReminderSpec {
+            offset_value: minutes,
+            offset_unit: "minutes".to_string(),
+            at_time: None,
+        }),
+        ("todo", false) => prefs.default_todo_allday_days.map(|days| ReminderSpec {
+            offset_value: days,
+            offset_unit: "days".to_string(),
+            at_time: Some(prefs.default_todo_allday_time.clone()),
+        }),
+        _ => None,
+    };
+    return spec.into_iter().collect();
+}
+
+pub async fn apply_default_reminders(
+    pool: &SqlitePool,
+    user_id: i64,
+    target_type: &str,
+    target_id: i64,
+    timed: bool,
+) -> Result<(), ReminderError> {
+    let prefs = crate::notify::get_prefs(pool, user_id).await?;
+    let specs = default_reminder_specs(&prefs, target_type, timed);
+    if specs.is_empty() {
+        return Ok(());
+    }
+    return replace_reminders(pool, user_id, target_type, target_id, &specs).await;
+}
+
+async fn prune_invalid_reminders(
+    conn: &mut SqliteConnection,
+    routine_id: i64,
+    timed: bool,
+) -> Result<(), sqlx::Error> {
+    let sql = if timed {
+        "DELETE FROM reminders WHERE target_type = 'routine' AND target_id = $1 AND \
+         ((offset_unit IN ('minutes', 'hours') AND at_time IS NOT NULL) \
+          OR (offset_unit IN ('days', 'weeks') AND at_time IS NULL))"
+    } else {
+        "DELETE FROM reminders WHERE target_type = 'routine' AND target_id = $1 AND at_time IS NULL"
+    };
+    sqlx::query(sql).bind(routine_id).execute(&mut *conn).await?;
+    return Ok(());
 }

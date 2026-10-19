@@ -12,6 +12,9 @@
 {% if let Some(deadline) = t.deadline %}
 <span class="todo-due tnum">{{ ui::ico("clock") }}{{ deadline }}{% if t.is_deadline && !t.done %}{% if let Some(c) = t.countdown %}<span class="countdown">{{ c }}</span>{% endif %}{% endif %}</span>
 {% endif %}
+{% if !t.reminders.is_empty() %}
+<span class="todo-due todo-rem">{{ ui::ico("bell") }}{{ t.reminders.join(", ") }}</span>
+{% endif %}
 {% if let Some(notes) = t.notes %}
 <p class="todo-notes">{{ notes }}</p>
 {% endif %}

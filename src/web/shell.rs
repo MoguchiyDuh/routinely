@@ -11,6 +11,7 @@ use sqlx::SqlitePool;
 use crate::app::AppState;
 use crate::auth::session;
 use crate::cookie;
+use crate::notify;
 use crate::punish;
 
 pub const FLASH_COOKIE_NAME: &str = "flash";
@@ -32,6 +33,7 @@ pub struct Shell {
     pub username: String,
     pub avatar: AvatarVm,
     pub pending_count: u64,
+    pub unread_count: i64,
     pub active: &'static str,
     pub flash: Option<String>,
 }
@@ -106,6 +108,7 @@ impl Shell {
         headers: &HeaderMap,
     ) -> Result<Shell, sqlx::Error> {
         let pending_count = punish::pending_count(&state.pool, auth.id).await?;
+        let unread_count = notify::unread_count(&state.pool, auth.id).await?;
         let avatar = AvatarVm::load(&state.pool, auth.id).await?;
         let flash = cookie::get(headers, FLASH_COOKIE_NAME)
             .and_then(|raw| cookie::decode(&raw))
@@ -115,6 +118,7 @@ impl Shell {
             username: auth.username.clone(),
             avatar,
             pending_count,
+            unread_count,
             active,
             flash,
         });

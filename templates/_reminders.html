@@ -1,0 +1,33 @@
+{% import "_macros.html" as ui %}
+{% macro row(r) -%}
+<div class="reminder-row" data-reminder-row>
+<input type="number" class="reminder-value" min="0" max="40320" step="1" required value="{{ r.value }}" aria-label="Reminder amount" data-r-value>
+<select class="reminder-unit" aria-label="Reminder unit" data-r-unit>
+<option value="minutes"{% if r.unit == "minutes" %} selected{% endif %}>minutes</option>
+<option value="hours"{% if r.unit == "hours" %} selected{% endif %}>hours</option>
+<option value="days"{% if r.unit == "days" %} selected{% endif %}>days</option>
+<option value="weeks"{% if r.unit == "weeks" %} selected{% endif %}>weeks</option>
+</select>
+<span class="reminder-before">before</span>
+<span class="reminder-at"{% if !r.show_time %} hidden{% endif %} data-r-at-wrap><span class="reminder-before">at</span><input type="time" value="{{ r.at_time }}" aria-label="Reminder time" data-r-at></span>
+<button type="button" class="btn btn-ghost btn-icon" aria-label="Remove reminder" title="Remove" data-reminder-remove>{{ ui::ico("x") }}</button>
+</div>
+{%- endmacro %}
+{% macro editor(r) -%}
+<fieldset class="reminders" data-reminders data-max="{{ r.max }}" data-time-source="{{ r.time_source }}"{% if r.timed %} data-timed{% endif %}{% if let Some(d) = r.defaults_timed %} data-defaults-timed="{{ d }}"{% endif %}{% if let Some(d) = r.defaults_untimed %} data-defaults-untimed="{{ d }}"{% endif %}>
+<legend>Reminders</legend>
+<input type="hidden" name="reminders_json" value="{{ r.json }}" data-reminders-json>
+<div class="reminder-rows" data-reminder-rows>
+{% for item in r.rows %}{{ row(item) }}{% endfor %}
+</div>
+<template data-reminder-template>{{ row(r.blank) }}</template>
+<p class="hint reminder-empty" data-reminder-empty{% if !r.rows.is_empty() %} hidden{% endif %}>No reminders.</p>
+{% if let Some(message) = r.error %}
+<p class="field-error">{{ message }}</p>
+{% endif %}
+<div class="reminder-actions">
+<button type="button" class="btn btn-sm" data-reminder-add{% if r.rows.len() >= r.max %} disabled{% endif %}>{{ ui::ico("plus") }}Add reminder</button>
+<span class="hint">Up to {{ r.max }}. 0 means at the start.</span>
+</div>
+</fieldset>
+{%- endmacro %}

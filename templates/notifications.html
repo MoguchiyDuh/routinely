@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}Notifications{% endblock %}
+{% block pagetitle %}Notifications{% endblock %}
+{% block content %}
+<div class="page page-narrow">
+<header class="page-head">
+<h1>Notifications</h1>
+{% if shell.unread_count > 0 %}
+<form method="post" action="/notifications/read">
+<button type="submit" class="btn">{{ ui::ico("check") }}Mark all read</button>
+</form>
+{% endif %}
+</header>
+{% if items.is_empty() %}
+<div class="card empty">
+{{ ui::ico("bell") }}
+<p>No notifications yet. Reminders and alerts show up here.</p>
+<a href="/settings">Notification settings</a>
+</div>
+{% else %}
+<ul class="card notif-list">
+{% include "_notification_items.html" %}
+</ul>
+{% endif %}
+</div>
+{% endblock %}

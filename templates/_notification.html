@@ -1,0 +1,20 @@
+{% import "_macros.html" as ui %}
+<li class="notif{% if n.unread %} is-unread{% endif %}" id="notif-{{ n.id }}">
+<span class="notif-icon">{{ ui::ico(n.icon) }}</span>
+<div class="notif-body">
+{% if n.has_url %}
+<a class="notif-title" href="/notifications/{{ n.id }}/open">{{ n.title }}</a>
+{% else %}
+<span class="notif-title">{{ n.title }}</span>
+{% endif %}
+{% if let Some(body) = n.body %}
+<p class="notif-text">{{ body }}</p>
+{% endif %}
+<time class="notif-time tnum" title="{{ n.when_full }}">{{ n.when_label }} &middot; {{ n.when_full }}</time>
+</div>
+{% if n.unread %}
+<form class="notif-read" method="post" action="/notifications/{{ n.id }}/read" hx-post="/notifications/{{ n.id }}/read" hx-target="closest li" hx-swap="outerHTML">
+<button type="submit" class="btn btn-ghost btn-icon" aria-label="Mark {{ n.title }} read" title="Mark read">{{ ui::ico("check") }}</button>
+</form>
+{% endif %}
+</li>

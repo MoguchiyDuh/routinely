@@ -36,6 +36,7 @@ async fn main() -> Result<(), AppError> {
     let config = Config::from_env()?;
     let pool = db::init(&config).await?;
     std::fs::create_dir_all(routinely::store::UPLOADS_DIR)?;
+    routinely::notify::spawn(pool.clone());
     let state = AppState {
         pool,
         config: config.clone(),

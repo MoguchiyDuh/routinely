@@ -25,7 +25,11 @@ use crate::store;
 use super::WebError;
 use super::WebResult;
 use super::html;
+use super::notifications::RemindersVm;
+use super::notifications::reminder_error_message;
 use super::shell::Shell;
+
+const ROUTINE_TIME_SOURCE: &str = "routine-time-of-day";
 
 #[derive(Template)]
 #[template(path = "routines.html")]
@@ -97,6 +101,7 @@ struct RoutineFormVm {
     start_date: String,
     time_of_day: String,
     time_end: String,
+    reminders: RemindersVm,
 }
 
 impl RoutineFormVm {
@@ -141,6 +146,7 @@ impl RoutineFormVm {
             start_date: String::new(),
             time_of_day: String::new(),
             time_end: String::new(),
+            reminders: RemindersVm::new(&[], false, ROUTINE_TIME_SOURCE),
         };
     }
 
@@ -194,6 +200,7 @@ struct RoutineFormPayload {
     start_date: Option<String>,
     time_of_day: Option<String>,
     time_end: Option<String>,
+    reminders_json: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -209,6 +216,7 @@ struct RoutineJsonPayload {
     start_date: Option<NaiveDate>,
     time_of_day: Option<String>,
     time_end: Option<String>,
+    reminders: Option<Vec<store::ReminderSpec>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -302,10 +310,15 @@ async fn new_routine_page(
     headers: axum::http::HeaderMap,
 ) -> WebResult {
     let shell = Shell::load(&state, &auth, "routines", &headers).await?;
-    return Ok(html(&NewRoutinePage {
-        shell,
-        form: RoutineFormVm::empty("/routines".to_string()),
-    })?);
+    let prefs = crate::notify::get_prefs(&state.pool, auth.id).await?;
+    let mut form = RoutineFormVm::empty("/routines".to_string());
+    form.reminders = RemindersVm::new(
+        &store::default_reminder_specs(&prefs, "routine", false),
+        false,
+        ROUTINE_TIME_SOURCE,
+    )
+    .with_defaults(&prefs, "routine");
+    return Ok(html(&NewRoutinePage { shell, form })?);
 }
 
 async fn create_routine_ssr(
@@ -317,7 +330,26 @@ async fn create_routine_ssr(
     let today = store::user_today(&auth.timezone);
     match form_spec(&payload, today) {
         Ok(spec) => {
-            store::create_routine(&state.pool, auth.id, &spec).await?;
+            let reminders = match form_reminders(payload.reminders_json.as_deref(), &spec) {
+                Ok(reminders) => reminders,
+                Err(message) => {
+                    let shell = Shell::load(&state, &auth, "routines", &headers).await?;
+                    let mut form = form_from_payload(&payload, "/routines".to_string());
+                    form.reminders = form.reminders.with_error(message);
+                    return Ok(html(&NewRoutinePage { shell, form })?);
+                }
+            };
+            let id = store::create_routine(&state.pool, auth.id, &spec).await?;
+            match reminders {
+                Some(list) => {
+                    store::replace_reminders(&state.pool, auth.id, "routine", id, &list).await?;
+                }
+                None => {
+                    let timed = spec.time_of_day.is_some();
+                    store::apply_default_reminders(&state.pool, auth.id, "routine", id, timed)
+                        .await?;
+                }
+            }
             return Ok(super::shell::redirect_with_flash(
                 "/routines",
                 "Routine created",
@@ -346,10 +378,10 @@ async fn edit_routine_page(
     if row.archived_at.is_some() || !store::is_chain_head(&state.pool, routine_id).await? {
         return Err(WebError::Conflict);
     }
-    return Ok(html(&EditRoutinePage {
-        shell,
-        form: form_from_row(&row, format!("/routines/{routine_id}")),
-    })?);
+    let mut form = form_from_row(&row, format!("/routines/{routine_id}"));
+    let stored = store::list_reminders_for(&state.pool, auth.id, "routine", &[routine_id]).await?;
+    form.reminders = RemindersVm::from_rows(&stored, row.time_of_day.is_some(), ROUTINE_TIME_SOURCE);
+    return Ok(html(&EditRoutinePage { shell, form })?);
 }
 
 async fn update_routine_ssr(
@@ -368,8 +400,22 @@ async fn update_routine_ssr(
     let today = store::user_today(&auth.timezone);
     match form_spec(&payload, today) {
         Ok(spec) => {
+            let reminders = match form_reminders(payload.reminders_json.as_deref(), &spec) {
+                Ok(reminders) => reminders,
+                Err(message) => {
+                    let shell = Shell::load(&state, &auth, "routines", &headers).await?;
+                    let mut form = edit_form_from_payload(&payload, routine_id);
+                    form.reminders = form.reminders.with_error(message);
+                    return Ok(html(&EditRoutinePage { shell, form })?);
+                }
+            };
             match store::update_routine(&state.pool, auth.id, routine_id, &spec, today).await {
-                Ok(_) => {
+                Ok(head) => {
+                    if let Some(list) = reminders {
+                        store::replace_reminders(&state.pool, auth.id, "routine", head, &list)
+                            .await
+                            .map_err(WebError::from)?;
+                    }
                     return Ok(super::shell::redirect_with_flash(
                         "/routines",
                         "Routine updated",
@@ -383,14 +429,29 @@ async fn update_routine_ssr(
         }
         Err(errors) => {
             let shell = Shell::load(&state, &auth, "routines", &headers).await?;
-            let mut form = form_from_payload(&payload, format!("/routines/{routine_id}"));
-            form.submit_label = "Save changes";
-            form.cancel = true;
-            form.show_start = false;
+            let mut form = edit_form_from_payload(&payload, routine_id);
             form.apply_errors(&errors);
+            if payload.reminders_json.is_none() {
+                let stored =
+                    store::list_reminders_for(&state.pool, auth.id, "routine", &[routine_id])
+                        .await?;
+                form.reminders = RemindersVm::from_rows(
+                    &stored,
+                    !payload.time_of_day.as_deref().unwrap_or("").trim().is_empty(),
+                    ROUTINE_TIME_SOURCE,
+                );
+            }
             return Ok(html(&EditRoutinePage { shell, form })?);
         }
     }
+}
+
+fn edit_form_from_payload(payload: &RoutineFormPayload, routine_id: i64) -> RoutineFormVm {
+    let mut form = form_from_payload(payload, format!("/routines/{routine_id}"));
+    form.submit_label = "Save changes";
+    form.cancel = true;
+    form.show_start = false;
+    return form;
 }
 
 async fn archive_ssr(
@@ -451,7 +512,19 @@ async fn api_create_routine(
     let today = store::user_today(&auth.timezone);
     let raw = json_raw(&payload)?;
     let spec = build_spec(raw, today).map_err(validation_error)?;
+    if let Some(reminders) = &payload.reminders {
+        store::normalize_reminders(reminders, spec.time_of_day.is_some())?;
+    }
     let id = store::create_routine(&state.pool, auth.id, &spec).await?;
+    match &payload.reminders {
+        Some(reminders) => {
+            store::replace_reminders(&state.pool, auth.id, "routine", id, reminders).await?;
+        }
+        None => {
+            let timed = spec.time_of_day.is_some();
+            store::apply_default_reminders(&state.pool, auth.id, "routine", id, timed).await?;
+        }
+    }
     return Ok(axum::Json(RoutineCreated { id }));
 }
 
@@ -464,13 +537,33 @@ async fn api_update_routine(
     let today = store::user_today(&auth.timezone);
     let raw = json_raw(&payload)?;
     let spec = build_spec(raw, today).map_err(validation_error)?;
+    if let Some(reminders) = &payload.reminders {
+        store::normalize_reminders(reminders, spec.time_of_day.is_some())?;
+    }
     let head = match store::update_routine(&state.pool, auth.id, routine_id, &spec, today).await {
         Ok(head) => head,
         Err(store::UpdateRoutineError::NotFound) => return Err(WebError::NotFound),
         Err(store::UpdateRoutineError::Conflict) => return Err(WebError::Conflict),
         Err(store::UpdateRoutineError::Db(error)) => return Err(WebError::Db(error)),
     };
+    if let Some(reminders) = &payload.reminders {
+        store::replace_reminders(&state.pool, auth.id, "routine", head, reminders).await?;
+    }
     return Ok(axum::Json(RoutineCreated { id: head }));
+}
+
+fn form_reminders(
+    raw: Option<&str>,
+    spec: &store::RoutineSpec,
+) -> Result<Option<Vec<store::ReminderSpec>>, &'static str> {
+    let Some(raw) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    let list: Vec<store::ReminderSpec> =
+        serde_json::from_str(raw).map_err(|_| "invalid reminders")?;
+    store::normalize_reminders(&list, spec.time_of_day.is_some())
+        .map_err(|error| reminder_error_message(&error))?;
+    return Ok(Some(list));
 }
 
 fn validation_error(errors: Vec<FieldError>) -> WebError {
@@ -619,6 +712,11 @@ fn form_from_payload(payload: &RoutineFormPayload, action: String) -> RoutineFor
     form.start_date = payload.start_date.clone().unwrap_or_default();
     form.time_of_day = payload.time_of_day.clone().unwrap_or_default();
     form.time_end = payload.time_end.clone().unwrap_or_default();
+    form.reminders = RemindersVm::from_json(
+        payload.reminders_json.as_deref(),
+        !form.time_of_day.trim().is_empty(),
+        ROUTINE_TIME_SOURCE,
+    );
     return form;
 }
 

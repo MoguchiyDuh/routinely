@@ -2,6 +2,7 @@ pub mod day;
 pub mod journal;
 pub mod leaderboard;
 pub mod notes;
+pub mod notifications;
 pub mod occurrences;
 pub mod punishments;
 pub mod routines;
@@ -40,6 +41,7 @@ pub fn router() -> Router<AppState> {
         .merge(settings::router())
         .merge(todos::router())
         .merge(notes::router())
+        .merge(notifications::router())
         .merge(week::router())
         .layer(middleware::from_fn(shell::clear_flash));
 }

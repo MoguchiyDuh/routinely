@@ -20,6 +20,7 @@ use crate::auth::extract::ApiAuth;
 use crate::auth::extract::PageAuth;
 use crate::auth::extract::token_from_header_value;
 use crate::avatar;
+use crate::notify;
 use crate::web::AvatarVm;
 use crate::web::WebError;
 use crate::web::WebResult;
@@ -58,6 +59,28 @@ pub struct SettingsPage {
     current_error: Option<&'static str>,
     new_error: Option<&'static str>,
     confirm_error: Option<&'static str>,
+    notif: NotifPrefsVm,
+    notif_error: Option<&'static str>,
+}
+
+struct NotifPrefsVm {
+    enabled: bool,
+    day_end_enabled: bool,
+    day_end_time: String,
+    penalty_enabled: bool,
+    routine_timed_on: bool,
+    routine_timed_value: String,
+    routine_timed_unit: &'static str,
+    routine_allday_on: bool,
+    routine_allday_time: String,
+    todo_timed_on: bool,
+    todo_timed_value: String,
+    todo_timed_unit: &'static str,
+    todo_allday_on: bool,
+    todo_allday_days: String,
+    todo_allday_time: String,
+    quiet_start: String,
+    quiet_end: String,
 }
 
 struct IconOptionVm {
@@ -79,6 +102,28 @@ struct SettingsErrors {
     current: Option<&'static str>,
     new: Option<&'static str>,
     confirm: Option<&'static str>,
+    notifications: Option<&'static str>,
+}
+
+#[derive(Debug, Deserialize)]
+struct NotificationForm {
+    enabled: Option<String>,
+    day_end_enabled: Option<String>,
+    day_end_time: Option<String>,
+    penalty_enabled: Option<String>,
+    routine_timed_on: Option<String>,
+    routine_timed_value: Option<String>,
+    routine_timed_unit: Option<String>,
+    routine_allday_on: Option<String>,
+    routine_allday_time: Option<String>,
+    todo_timed_on: Option<String>,
+    todo_timed_value: Option<String>,
+    todo_timed_unit: Option<String>,
+    todo_allday_on: Option<String>,
+    todo_allday_days: Option<String>,
+    todo_allday_time: Option<String>,
+    quiet_start: Option<String>,
+    quiet_end: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -110,6 +155,7 @@ pub fn router() -> Router<AppState> {
     return Router::new()
         .route("/settings", get(settings_view))
         .route("/settings/password", post(password_ssr))
+        .route("/settings/notifications", post(notifications_ssr))
         .route("/settings/avatar", post(avatar_ssr))
         .route("/settings/avatar/icon", post(icon_ssr))
         .route("/settings/avatar/remove", post(remove_ssr))
@@ -178,6 +224,189 @@ async fn password_ssr(
     let shell = Shell::load(&state, &auth, "settings", &headers).await?;
     let page = build_page(&state, &auth.id, shell, errors).await?;
     return Ok(html(&page)?);
+}
+
+async fn notifications_ssr(
+    PageAuth(auth): PageAuth,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Form(form): Form<NotificationForm>,
+) -> WebResult {
+    let outcome = prefs_from_form(&form).and_then(|prefs| notify::validate_prefs(&prefs));
+    match outcome {
+        Ok(prefs) => {
+            notify::save_prefs(&state.pool, auth.id, &prefs).await?;
+            return Ok(crate::web::shell::redirect_with_flash(
+                "/settings",
+                "Notification settings saved",
+                state.config.cookie_secure,
+            ));
+        }
+        Err(message) => {
+            let errors = SettingsErrors {
+                notifications: Some(message),
+                ..SettingsErrors::default()
+            };
+            let shell = Shell::load(&state, &auth, "settings", &headers).await?;
+            let mut page = build_page(&state, &auth.id, shell, errors).await?;
+            page.notif = vm_from_form(&form);
+            let body = page.render()?;
+            return Ok((
+                StatusCode::UNPROCESSABLE_ENTITY,
+                axum::response::Html(body),
+            )
+                .into_response());
+        }
+    }
+}
+
+fn unit_factor(unit: Option<&str>) -> Result<i64, &'static str> {
+    return match unit.map(str::trim) {
+        Some("minutes") | None | Some("") => Ok(1),
+        Some("hours") => Ok(60),
+        Some("days") => Ok(1440),
+        Some(_) => Err("unknown reminder unit"),
+    };
+}
+
+fn minutes_from_form(
+    enabled: bool,
+    value: Option<&str>,
+    unit: Option<&str>,
+) -> Result<Option<i64>, &'static str> {
+    if !enabled {
+        return Ok(None);
+    }
+    let amount = value
+        .map(str::trim)
+        .unwrap_or("")
+        .parse::<i64>()
+        .map_err(|_| "default reminder amount must be a whole number")?;
+    let minutes = amount
+        .checked_mul(unit_factor(unit)?)
+        .ok_or("default minutes must be 0-40320")?;
+    return Ok(Some(minutes));
+}
+
+fn text(raw: &Option<String>) -> String {
+    return raw.as_deref().unwrap_or("").trim().to_string();
+}
+
+fn prefs_from_form(form: &NotificationForm) -> Result<notify::NotificationPrefs, &'static str> {
+    let todo_allday_days = if form.todo_allday_on.is_some() {
+        Some(
+            text(&form.todo_allday_days)
+                .parse::<i64>()
+                .map_err(|_| "default days must be a whole number")?,
+        )
+    } else {
+        None
+    };
+    let optional = |raw: &Option<String>| {
+        let value = text(raw);
+        return if value.is_empty() { None } else { Some(value) };
+    };
+    return Ok(notify::NotificationPrefs {
+        enabled: form.enabled.is_some(),
+        day_end_enabled: form.day_end_enabled.is_some(),
+        day_end_time: text(&form.day_end_time),
+        penalty_enabled: form.penalty_enabled.is_some(),
+        quiet_start: optional(&form.quiet_start),
+        quiet_end: optional(&form.quiet_end),
+        default_routine_timed_minutes: minutes_from_form(
+            form.routine_timed_on.is_some(),
+            form.routine_timed_value.as_deref(),
+            form.routine_timed_unit.as_deref(),
+        )?,
+        default_routine_allday_enabled: form.routine_allday_on.is_some(),
+        default_routine_allday_time: text(&form.routine_allday_time),
+        default_todo_timed_minutes: minutes_from_form(
+            form.todo_timed_on.is_some(),
+            form.todo_timed_value.as_deref(),
+            form.todo_timed_unit.as_deref(),
+        )?,
+        default_todo_allday_days: todo_allday_days,
+        default_todo_allday_time: text(&form.todo_allday_time),
+    });
+}
+
+fn split_minutes(minutes: i64) -> (String, &'static str) {
+    if minutes > 0 && minutes % 1440 == 0 {
+        return ((minutes / 1440).to_string(), "days");
+    }
+    if minutes > 0 && minutes % 60 == 0 {
+        return ((minutes / 60).to_string(), "hours");
+    }
+    return (minutes.to_string(), "minutes");
+}
+
+fn form_unit(raw: &Option<String>) -> &'static str {
+    return match raw.as_deref().map(str::trim) {
+        Some("hours") => "hours",
+        Some("days") => "days",
+        _ => "minutes",
+    };
+}
+
+fn vm_from_prefs(prefs: &notify::NotificationPrefs) -> NotifPrefsVm {
+    let fallback = notify::NotificationPrefs::default();
+    let (routine_value, routine_unit) = split_minutes(
+        prefs
+            .default_routine_timed_minutes
+            .or(fallback.default_routine_timed_minutes)
+            .unwrap_or(10),
+    );
+    let (todo_value, todo_unit) = split_minutes(
+        prefs
+            .default_todo_timed_minutes
+            .or(fallback.default_todo_timed_minutes)
+            .unwrap_or(60),
+    );
+    return NotifPrefsVm {
+        enabled: prefs.enabled,
+        day_end_enabled: prefs.day_end_enabled,
+        day_end_time: prefs.day_end_time.clone(),
+        penalty_enabled: prefs.penalty_enabled,
+        routine_timed_on: prefs.default_routine_timed_minutes.is_some(),
+        routine_timed_value: routine_value,
+        routine_timed_unit: routine_unit,
+        routine_allday_on: prefs.default_routine_allday_enabled,
+        routine_allday_time: prefs.default_routine_allday_time.clone(),
+        todo_timed_on: prefs.default_todo_timed_minutes.is_some(),
+        todo_timed_value: todo_value,
+        todo_timed_unit: todo_unit,
+        todo_allday_on: prefs.default_todo_allday_days.is_some(),
+        todo_allday_days: prefs
+            .default_todo_allday_days
+            .or(fallback.default_todo_allday_days)
+            .unwrap_or(1)
+            .to_string(),
+        todo_allday_time: prefs.default_todo_allday_time.clone(),
+        quiet_start: prefs.quiet_start.clone().unwrap_or_default(),
+        quiet_end: prefs.quiet_end.clone().unwrap_or_default(),
+    };
+}
+
+fn vm_from_form(form: &NotificationForm) -> NotifPrefsVm {
+    return NotifPrefsVm {
+        enabled: form.enabled.is_some(),
+        day_end_enabled: form.day_end_enabled.is_some(),
+        day_end_time: text(&form.day_end_time),
+        penalty_enabled: form.penalty_enabled.is_some(),
+        routine_timed_on: form.routine_timed_on.is_some(),
+        routine_timed_value: text(&form.routine_timed_value),
+        routine_timed_unit: form_unit(&form.routine_timed_unit),
+        routine_allday_on: form.routine_allday_on.is_some(),
+        routine_allday_time: text(&form.routine_allday_time),
+        todo_timed_on: form.todo_timed_on.is_some(),
+        todo_timed_value: text(&form.todo_timed_value),
+        todo_timed_unit: form_unit(&form.todo_timed_unit),
+        todo_allday_on: form.todo_allday_on.is_some(),
+        todo_allday_days: text(&form.todo_allday_days),
+        todo_allday_time: text(&form.todo_allday_time),
+        quiet_start: text(&form.quiet_start),
+        quiet_end: text(&form.quiet_end),
+    };
 }
 
 async fn avatar_ssr(
@@ -425,6 +654,7 @@ async fn build_page(
             selected: avatar.color == value,
         });
     }
+    let prefs = notify::get_prefs(&state.pool, *user_id).await?;
     return Ok(SettingsPage {
         shell,
         avatar,
@@ -436,6 +666,8 @@ async fn build_page(
         current_error: errors.current,
         new_error: errors.new,
         confirm_error: errors.confirm,
+        notif: vm_from_prefs(&prefs),
+        notif_error: errors.notifications,
     });
 }
 

@@ -60,6 +60,76 @@
 </form>
 </section>
 <section class="card">
+<h2>Notifications</h2>
+<p class="hint">Reminder defaults below apply to <strong>new</strong> routines and todos only. Existing items keep their reminders; edit them on the item.</p>
+{% if let Some(e) = notif_error %}
+<p class="form-error" role="alert">{{ e }}</p>
+{% endif %}
+<form method="post" action="/settings/notifications" class="settings-form notif-form">
+<label class="pref-toggle"><input type="checkbox" name="enabled"{% if notif.enabled %} checked{% endif %}><span>Notifications on <span class="hint-inline">master switch</span></span></label>
+<fieldset>
+<legend>Alerts</legend>
+<div class="pref-row">
+<label class="pref-toggle"><input type="checkbox" name="day_end_enabled"{% if notif.day_end_enabled %} checked{% endif %}><span>Day-end nudge if routines are still open</span></label>
+<div class="pref-inputs"><label for="pref-day-end-time" class="pref-label">at</label><input id="pref-day-end-time" type="time" name="day_end_time" value="{{ notif.day_end_time }}"></div>
+</div>
+<div class="pref-row">
+<label class="pref-toggle"><input type="checkbox" name="penalty_enabled"{% if notif.penalty_enabled %} checked{% endif %}><span>Penalty issued and resolved</span></label>
+</div>
+</fieldset>
+<fieldset>
+<legend>Default reminders for new routines</legend>
+<div class="pref-row">
+<label class="pref-toggle"><input type="checkbox" name="routine_timed_on"{% if notif.routine_timed_on %} checked{% endif %}><span>Timed routine</span></label>
+<div class="pref-inputs">
+<input type="number" name="routine_timed_value" min="0" step="1" value="{{ notif.routine_timed_value }}" aria-label="Timed routine reminder amount">
+<select name="routine_timed_unit" aria-label="Timed routine reminder unit">
+<option value="minutes"{% if notif.routine_timed_unit == "minutes" %} selected{% endif %}>minutes</option>
+<option value="hours"{% if notif.routine_timed_unit == "hours" %} selected{% endif %}>hours</option>
+<option value="days"{% if notif.routine_timed_unit == "days" %} selected{% endif %}>days</option>
+</select>
+<span class="pref-label">before</span>
+</div>
+</div>
+<div class="pref-row">
+<label class="pref-toggle"><input type="checkbox" name="routine_allday_on"{% if notif.routine_allday_on %} checked{% endif %}><span>All-day routine, same day</span></label>
+<div class="pref-inputs"><label for="pref-routine-allday-time" class="pref-label">at</label><input id="pref-routine-allday-time" type="time" name="routine_allday_time" value="{{ notif.routine_allday_time }}"></div>
+</div>
+</fieldset>
+<fieldset>
+<legend>Default reminders for new todo deadlines</legend>
+<div class="pref-row">
+<label class="pref-toggle"><input type="checkbox" name="todo_timed_on"{% if notif.todo_timed_on %} checked{% endif %}><span>Deadline with a time</span></label>
+<div class="pref-inputs">
+<input type="number" name="todo_timed_value" min="0" step="1" value="{{ notif.todo_timed_value }}" aria-label="Timed deadline reminder amount">
+<select name="todo_timed_unit" aria-label="Timed deadline reminder unit">
+<option value="minutes"{% if notif.todo_timed_unit == "minutes" %} selected{% endif %}>minutes</option>
+<option value="hours"{% if notif.todo_timed_unit == "hours" %} selected{% endif %}>hours</option>
+<option value="days"{% if notif.todo_timed_unit == "days" %} selected{% endif %}>days</option>
+</select>
+<span class="pref-label">before</span>
+</div>
+</div>
+<div class="pref-row">
+<label class="pref-toggle"><input type="checkbox" name="todo_allday_on"{% if notif.todo_allday_on %} checked{% endif %}><span>All-day deadline</span></label>
+<div class="pref-inputs">
+<input type="number" name="todo_allday_days" min="0" max="28" step="1" value="{{ notif.todo_allday_days }}" aria-label="All-day deadline reminder days">
+<span class="pref-label">days before at</span>
+<input type="time" name="todo_allday_time" value="{{ notif.todo_allday_time }}" aria-label="All-day deadline reminder time">
+</div>
+</div>
+</fieldset>
+<fieldset>
+<legend>Quiet hours <span class="hint-inline">optional, leave both empty for none</span></legend>
+<div class="pref-inputs">
+<label for="pref-quiet-start" class="pref-label">From</label><input id="pref-quiet-start" type="time" name="quiet_start" value="{{ notif.quiet_start }}">
+<label for="pref-quiet-end" class="pref-label">to</label><input id="pref-quiet-end" type="time" name="quiet_end" value="{{ notif.quiet_end }}">
+</div>
+</fieldset>
+<button type="submit" class="btn btn-primary">Save notification settings</button>
+</form>
+</section>
+<section class="card">
 <h2>Password</h2>
 <form method="post" action="/settings/password" class="settings-form">
 <div class="field">

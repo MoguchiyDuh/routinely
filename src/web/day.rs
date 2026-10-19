@@ -49,6 +49,7 @@ pub struct DayPage {
     overdue: Vec<TodoVm>,
     todos: Vec<TodoVm>,
     deadlines: Vec<TodoVm>,
+    reminders: super::notifications::RemindersVm,
     body: Option<String>,
     saved: bool,
     readonly: bool,
@@ -82,6 +83,7 @@ pub(crate) struct TodosSection {
     pub overdue: Vec<TodoVm>,
     pub todos: Vec<TodoVm>,
     pub deadlines: Vec<TodoVm>,
+    pub reminders: super::notifications::RemindersVm,
     pub readonly: bool,
 }
 
@@ -167,6 +169,7 @@ pub(crate) struct TodoVm {
     pub countdown: Option<String>,
     pub done: bool,
     pub overdue: bool,
+    pub reminders: Vec<String>,
 }
 
 pub(crate) struct TodoLists {
@@ -304,6 +307,7 @@ async fn day_view(
         overdue: lists.overdue,
         todos: lists.todos,
         deadlines: lists.deadlines,
+        reminders: deadline_reminders(&state.pool, auth.id).await?,
         body,
         saved: false,
         readonly,
@@ -587,8 +591,20 @@ pub(crate) async fn build_todos_section(
         overdue: lists.overdue,
         todos: lists.todos,
         deadlines: lists.deadlines,
+        reminders: deadline_reminders(pool, user_id).await?,
         readonly: false,
     });
+}
+
+async fn deadline_reminders(
+    pool: &SqlitePool,
+    user_id: i64,
+) -> Result<super::notifications::RemindersVm, WebError> {
+    let prefs = crate::notify::get_prefs(pool, user_id).await?;
+    let specs = store::default_reminder_specs(&prefs, "todo", false);
+    return Ok(
+        super::notifications::RemindersVm::new(&specs, false, "dl-time").with_defaults(&prefs, "todo"),
+    );
 }
 
 async fn build_todo_lists(
@@ -601,6 +617,8 @@ async fn build_todo_lists(
     let tz = store::user_timezone(timezone);
     let local_today = Utc::now().with_timezone(&tz).date_naive();
     let todo_rows = store::list_todos(pool, user_id, &now).await?;
+    let todo_ids: Vec<i64> = todo_rows.iter().map(|t| t.id).collect();
+    let reminder_rows = store::list_reminders_for(pool, user_id, "todo", &todo_ids).await?;
     let mut overdue = Vec::new();
     let mut todos = Vec::new();
     let mut deadlines = Vec::new();
@@ -625,6 +643,11 @@ async fn build_todo_lists(
                 .and_then(|raw| fmt_countdown(raw, &tz, local_today)),
             done: t.completed_at.is_some(),
             overdue: is_overdue(t, &now),
+            reminders: reminder_rows
+                .iter()
+                .filter(|row| row.target_id == t.id)
+                .map(super::notifications::reminder_label)
+                .collect(),
         };
         if vm.overdue {
             overdue.push(vm);

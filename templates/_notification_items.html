@@ -1,0 +1,6 @@
+{% for n in items %}
+{% include "_notification.html" %}
+{% endfor %}
+{% if let Some(before) = next_before_id %}
+<li class="notif-more"><button type="button" class="btn" hx-get="/notifications?before_id={{ before }}" hx-target="closest li" hx-swap="outerHTML">Load more</button></li>
+{% endif %}

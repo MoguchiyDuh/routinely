@@ -4196,3 +4196,263 @@ a.month-wk:hover {
   justify-content: center;
   gap: var(--sp-2);
 }
+
+.bell-badge[hidden] {
+  display: none;
+}
+
+.topbar-bell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.topbar-bell:hover {
+  background: var(--surface-2);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.topbar-bell[aria-current="page"] {
+  color: var(--accent-strong);
+}
+
+.topbar-bell .icon {
+  width: 22px;
+  height: 22px;
+}
+
+.topbar-bell .bell-badge {
+  position: absolute;
+  top: 2px;
+  right: 0;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  font-size: 11px;
+}
+
+@media (min-width: 900px) {
+  .topbar-bell {
+    display: none;
+  }
+}
+
+.notif-list {
+  list-style: none;
+  margin: 0 0 var(--sp-5);
+  padding: 0;
+  overflow: hidden;
+}
+
+.notif {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.notif:last-child {
+  border-bottom: 0;
+}
+
+.notif.is-unread {
+  background: var(--accent-tint);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.notif-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  background: var(--surface-3);
+  color: var(--text-2);
+}
+
+.notif.is-unread .notif-icon {
+  background: var(--accent-tint);
+  color: var(--accent-strong);
+}
+
+.notif-icon .icon {
+  width: 18px;
+  height: 18px;
+}
+
+.notif-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.notif-title {
+  color: var(--text);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.notif:not(.is-unread) .notif-title {
+  font-weight: 500;
+}
+
+.notif-text {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.notif-time {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.notif-read {
+  flex: none;
+}
+
+.notif-more {
+  display: flex;
+  justify-content: center;
+  padding: var(--sp-3);
+}
+
+.card.empty {
+  margin-bottom: var(--sp-5);
+}
+
+.reminders {
+  border: 0;
+  padding: 0;
+  margin: 0 0 var(--sp-5);
+}
+
+.reminders legend {
+  padding: 0;
+  margin: 0 0 var(--sp-2);
+}
+
+.reminder-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.reminder-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.reminder-value {
+  width: 88px;
+  flex: none;
+}
+
+.reminder-unit {
+  flex: none;
+}
+
+.reminder-before,
+.pref-label {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.reminder-at {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.reminder-at[hidden],
+.reminder-empty[hidden] {
+  display: none;
+}
+
+.reminder-row .btn-icon {
+  margin-left: auto;
+}
+
+.reminder-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+}
+
+.deadlines .reminders,
+.todo-form .reminders {
+  margin-bottom: var(--sp-4);
+}
+
+.todo-rem {
+  flex-basis: 100%;
+}
+
+.notif-form {
+  max-width: 560px;
+}
+
+.notif-form fieldset {
+  margin-bottom: var(--sp-4);
+}
+
+.pref-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2) var(--sp-4);
+  padding: var(--sp-2) 0;
+}
+
+.pref-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 44px;
+  font-size: var(--text-md);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.pref-inputs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.pref-inputs input[type="number"] {
+  width: 88px;
+}
+
+.pref-inputs input[type="time"] {
+  width: auto;
+}
+
+@media (max-width: 480px) {
+  .reminder-value {
+    width: 76px;
+  }
+  .pref-inputs {
+    width: 100%;
+    padding-left: 32px;
+  }
+}

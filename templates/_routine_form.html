@@ -1,3 +1,4 @@
+{% import "_reminders.html" as rem %}
 <form method="post" action="{{ form.action }}" class="routine-form" id="routine-form">
 {% if let Some(message) = form.error %}
 <p class="form-error" role="alert">{{ message }}</p>
@@ -113,6 +114,7 @@
 {% endif %}
 </div>
 </div>
+{{ rem::editor(&form.reminders) }}
 <div class="form-actions">
 <button type="submit" class="btn btn-primary">{{ form.submit_label }}</button>
 {% if form.cancel %}

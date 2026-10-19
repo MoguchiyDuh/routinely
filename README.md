@@ -13,6 +13,7 @@ Small self-hosted routine tracker for a group of friends. Track recurring routin
 - **Journal**: daily notes and proof history with text search and a per-routine filter (notes, links and photos)
 - **Penalties**: missed days and unmet goals draw from a shared catalog, max 3 per missed day; clear or waive
 - **Group**: leaderboard, profiles with heatmap, read-only view of other members' calendars
+- **Reminders**: on by default, Google-Calendar-style (N minutes/hours/days/weeks before, plus a time for day/week offsets) on routines and todo deadlines, delivered to an in-app inbox
 - Server-rendered HTML with htmx; JSON API under `/api/v1`
 
 ## Stack
@@ -51,6 +52,39 @@ cargo test
 
 New accounts need the signup code. Set `ROUTINELY_COOKIE_SECURE=true` behind HTTPS.
 
+## Notifications
+
+Notifications are on by default (master switch in prefs). A background tick (every 30 s) evaluates penalties and creates inbox rows from:
+
+- **Reminders**: up to 5 per routine or todo. `minutes`/`hours` offsets are relative to the start time or deadline (no `at_time`); `days`/`weeks` offsets and untimed or all-day targets need an `at_time` (`HH:MM`). Offset `0 minutes` means "at start". A reminder fires only within 15 minutes after its fire time and never retroactively. Completed todos/occurrences and archived routines are skipped; count routines remind on every active day until the period goal is met.
+- **Day-end nudge** (default on, 20:00): once per day after `day_end_time` if routines (timed or not) are still open.
+- **Penalty issued/resolved** (default on): only penalties created after the user's prefs row was first resolved, max 24 h back.
+- **Quiet hours** (optional): no notifications are created inside the window; reminders that would have fired are dropped, nudges and penalties follow after it ends.
+
+Default reminders are copied into real reminder rows when a routine or todo is created without a `reminders` field (an explicit `[]` means none; SSR forms use the optional `reminders_json` field the same way). Defaults live in prefs: timed routine 10 min before, untimed routine none (optional same-day time), timed todo 60 min before, all-day todo 1 day before at 09:00. Existing routines and todos got these via migration 0004 without firing retroactively. Editing never re-applies defaults; reminders that become invalid after a timed/untimed change are dropped.
+
+Notifications are deduplicated by key, read ones are purged after 30 days, unread after 90. `notification_deliveries` is schema-only, reserved for a future Telegram channel.
+
+UI:
+
+- Bell in the sidebar and top bar with an unread badge (polled every 60 s); `/notifications` is the inbox (newest first, unread highlighted, per-item and "Mark all read", "Load more"). Opening an item's link marks it read.
+- Settings → Notifications edits every pref. Reminder defaults there apply to new routines and todos only.
+- Routine forms and the deadline form have a reminder editor (up to 5 rows: amount, unit, optional time). New forms are pre-filled with your defaults, which you can edit or remove; removing every row means no reminders. The time field appears for day/week offsets and for untimed or all-day items. Todo deadlines list their reminders in the todo list.
+
+JSON API (cookie auth, under `/api/v1`):
+
+| Method | Path |
+| --- | --- |
+| GET | `/notifications?limit&before_id` |
+| GET | `/notifications/unread_count` |
+| POST | `/notifications/read`, `/notifications/{id}/read` |
+| GET, PUT | `/notifications/prefs` |
+| GET | `/reminders?target_type&target_id` |
+| POST | `/reminders` (`target_type`, `target_id`, `offset_value`, `offset_unit`, `at_time`) |
+| DELETE | `/reminders/{id}` |
+
+Routine and todo create (and routine update) payloads accept `reminders: [{offset_value, offset_unit, at_time}]`; on routine update the list replaces the existing set.
+
 ## Structure
 
 ```
@@ -59,6 +93,7 @@ src/web/        # SSR pages and JSON API handlers
 src/store.rs    # Queries and occurrence materialization
 src/recurrence.rs
 src/punish.rs   # Miss evaluation and penalty draws
+src/notify.rs   # Reminder/notification tick, inbox, prefs
 src/score.rs    # Streaks, percentages, heatmap
 templates/      # Askama templates
 static/         # CSS, icons, htmx

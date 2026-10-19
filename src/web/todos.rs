@@ -38,6 +38,7 @@ struct TodoForm {
     kind: Option<String>,
     date: Option<String>,
     time: Option<String>,
+    reminders_json: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -48,6 +49,7 @@ struct TodoJsonPayload {
     kind: Option<String>,
     date: Option<String>,
     time: Option<String>,
+    reminders: Option<Vec<store::ReminderSpec>>,
 }
 
 struct Due {
@@ -85,7 +87,19 @@ async fn create_ssr(
         &auth.timezone,
     )?;
     let title = validate_title(payload.title.as_deref())?;
-    store::create_todo(
+    let reminders = match non_empty(payload.reminders_json.as_deref()) {
+        Some(raw) => {
+            let list: Vec<store::ReminderSpec> = serde_json::from_str(raw)
+                .map_err(|_| WebError::Validation("invalid reminders"))?;
+            if due.deadline.is_none() && !list.is_empty() {
+                return Err(WebError::Validation("todo has no deadline"));
+            }
+            store::normalize_reminders(&list, !due.all_day)?;
+            Some(list)
+        }
+        None => None,
+    };
+    let id = store::create_todo(
         &state.pool,
         auth.id,
         &title,
@@ -95,6 +109,16 @@ async fn create_ssr(
         due.all_day,
     )
     .await?;
+    match reminders {
+        Some(list) if !list.is_empty() => {
+            store::replace_reminders(&state.pool, auth.id, "todo", id, &list).await?;
+        }
+        Some(_) => {}
+        None if due.deadline.is_some() => {
+            store::apply_default_reminders(&state.pool, auth.id, "todo", id, !due.all_day).await?;
+        }
+        None => {}
+    }
     return finish_ssr(&state, &auth, day, today, &headers).await;
 }
 
@@ -147,6 +171,12 @@ async fn api_create(
         &auth.timezone,
     )?;
     let title = validate_title(payload.title.as_deref())?;
+    if let Some(reminders) = &payload.reminders {
+        if due.deadline.is_none() && !reminders.is_empty() {
+            return Err(WebError::Validation("todo has no deadline"));
+        }
+        store::normalize_reminders(reminders, !due.all_day)?;
+    }
     let id = store::create_todo(
         &state.pool,
         auth.id,
@@ -157,6 +187,16 @@ async fn api_create(
         due.all_day,
     )
     .await?;
+    match payload.reminders.as_deref() {
+        Some([]) => {}
+        Some(reminders) => {
+            store::replace_reminders(&state.pool, auth.id, "todo", id, reminders).await?;
+        }
+        None if due.deadline.is_some() => {
+            store::apply_default_reminders(&state.pool, auth.id, "todo", id, !due.all_day).await?;
+        }
+        None => {}
+    }
     return Ok((
         axum::http::StatusCode::OK,
         axum::Json(
