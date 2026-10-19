@@ -1,6 +1,6 @@
 services:
   app:
-    image: ghcr.io/moguchiyduh/routinely:latest
+    image: ghcr.io/moguchiyduh/routinely:${IMAGE_TAG:-latest}
     restart: unless-stopped
     env_file: .env
     environment:
