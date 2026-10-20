@@ -68,9 +68,11 @@
 <label for="proof-notes-{{ oid }}">Notes <span class="hint-inline">optional · links are clickable</span></label>
 <textarea id="proof-notes-{{ oid }}" name="notes" rows="3" maxlength="4000">{% if let Some(p) = pin %}{% if let Some(n) = p.notes %}{{ n }}{% endif %}{% endif %}</textarea>
 </div>
-<div class="field">
-<label for="proof-photos-{{ oid }}">Photos <span class="hint-inline">optional · PNG, JPEG or WebP</span></label>
-<input id="proof-photos-{{ oid }}" type="file" name="photos" multiple accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp">
+<div class="field" data-photo-field>
+<label for="proof-photos-{{ oid }}">Photos <span class="hint-inline">optional · PNG, JPEG or WebP<span data-paste-hint hidden> · or paste with Ctrl+V</span></span></label>
+<input id="proof-photos-{{ oid }}" type="file" name="photos" multiple accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" data-photo-input>
+<ul class="photo-previews" data-photo-previews aria-label="Selected photos" hidden></ul>
+<template data-photo-remove-template><button type="button" class="photo-preview-remove" data-photo-remove title="Remove">{{ ico("x") }}</button></template>
 </div>
 <div class="form-actions">
 <button type="submit" class="btn btn-primary btn-sm">Save proof</button>

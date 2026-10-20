@@ -1702,6 +1702,58 @@ a.chip:focus-visible {
   margin-bottom: var(--sp-3);
 }
 
+.photo-previews {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.photo-preview {
+  position: relative;
+  width: 56px;
+  height: 56px;
+}
+
+.photo-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+}
+
+.photo-preview-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.photo-preview-remove:hover {
+  background: var(--danger-tint);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.photo-preview-remove .icon {
+  width: 12px;
+  height: 12px;
+}
+
 .proof-loading {
   padding: var(--sp-3) var(--sp-4);
   color: var(--muted);

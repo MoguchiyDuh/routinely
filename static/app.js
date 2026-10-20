@@ -219,6 +219,153 @@
   document.addEventListener("input", syncNeedsValue);
   document.addEventListener("change", syncNeedsValue);
 
+  var PHOTO_TYPES = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
+  var MAX_PHOTO_BYTES = 10 * 1024 * 1024;
+  var canSetFiles = (function () {
+    try {
+      new DataTransfer();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  })();
+  var isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
+  var pasteCounter = 0;
+
+  var toArray = function (list) {
+    return Array.prototype.slice.call(list || []);
+  };
+
+  var photoField = function (el) {
+    return el && el.closest ? el.closest("[data-photo-field]") : null;
+  };
+
+  var renderPreviews = function (input) {
+    var field = photoField(input);
+    var list = field && field.querySelector("[data-photo-previews]");
+    if (!list) return;
+    (list._urls || []).forEach(function (url) {
+      URL.revokeObjectURL(url);
+    });
+    list._urls = [];
+    list.textContent = "";
+    var template = field.querySelector("[data-photo-remove-template]");
+    var files = toArray(input.files);
+    files.forEach(function (file, index) {
+      var li = document.createElement("li");
+      li.className = "photo-preview";
+      var url = URL.createObjectURL(file);
+      list._urls.push(url);
+      var img = document.createElement("img");
+      img.src = url;
+      img.alt = file.name;
+      li.appendChild(img);
+      if (canSetFiles && template) {
+        var remove = template.content.firstElementChild.cloneNode(true);
+        remove.setAttribute("data-photo-remove", String(index));
+        remove.setAttribute("aria-label", "Remove " + file.name);
+        li.appendChild(remove);
+      }
+      list.appendChild(li);
+    });
+    list.hidden = files.length === 0;
+  };
+
+  var setPhotos = function (input, files) {
+    var dt = new DataTransfer();
+    files.forEach(function (file) {
+      dt.items.add(file);
+    });
+    input.files = dt.files;
+    input._photos = files;
+    renderPreviews(input);
+  };
+
+  var addPhotos = function (input, files) {
+    var current = input._photos || toArray(input.files);
+    var added = 0;
+    files.forEach(function (file) {
+      var ext = PHOTO_TYPES[file.type];
+      if (!ext) {
+        toast("Only PNG, JPEG or WebP images can be attached.");
+        return;
+      }
+      if (file.size > MAX_PHOTO_BYTES) {
+        toast("That image is larger than 10 MB.");
+        return;
+      }
+      pasteCounter += 1;
+      var name = "pasted-" + Date.now() + "-" + pasteCounter + "." + ext;
+      current.push(new File([file], name, { type: file.type }));
+      added += 1;
+    });
+    if (added) setPhotos(input, current);
+    return added;
+  };
+
+  var pasteTarget = function (target) {
+    var scope = target && target.closest ? target.closest("details.proof[open]") : null;
+    if (scope) return scope.querySelector("[data-photo-input]");
+    if (target && target !== document.body && target !== document.documentElement) return null;
+    var open = document.querySelectorAll("details.proof[open] [data-photo-input]");
+    return open.length === 1 ? open[0] : null;
+  };
+
+  var enablePaste = function () {
+    if (!canSetFiles) return;
+    document.querySelectorAll("[data-paste-hint][hidden]").forEach(function (el) {
+      if (isMac) el.textContent = " · or paste with ⌘V";
+      el.hidden = false;
+    });
+  };
+
+  document.addEventListener("paste", function (ev) {
+    if (!canSetFiles || !ev.clipboardData) return;
+    var input = pasteTarget(ev.target);
+    if (!input) return;
+    var t = ev.target;
+    var inTextField = t && (t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && t.type !== "file"));
+    var types = toArray(ev.clipboardData.types);
+    if (inTextField && types.indexOf("text/plain") !== -1) return;
+    var files = [];
+    toArray(ev.clipboardData.items).forEach(function (item) {
+      if (item.kind !== "file" || item.type.indexOf("image/") !== 0) return;
+      var file = item.getAsFile();
+      if (file) files.push(file);
+    });
+    if (!files.length) return;
+    ev.preventDefault();
+    addPhotos(input, files);
+  });
+
+  document.addEventListener("change", function (ev) {
+    var input = ev.target;
+    if (!input || !input.hasAttribute || !input.hasAttribute("data-photo-input")) return;
+    if (!canSetFiles) {
+      renderPreviews(input);
+      return;
+    }
+    setPhotos(input, (input._photos || []).concat(toArray(input.files)));
+  });
+
+  document.addEventListener("click", function (ev) {
+    var t = ev.target;
+    if (!t.closest) return;
+    var remove = t.closest("[data-photo-remove]");
+    if (!remove) return;
+    var field = photoField(t);
+    var input = field && field.querySelector("[data-photo-input]");
+    if (!input) return;
+    var files = toArray(input.files);
+    files.splice(parseInt(remove.getAttribute("data-photo-remove"), 10), 1);
+    setPhotos(input, files);
+    var next = field.querySelector("[data-photo-remove]");
+    (next || input).focus();
+  });
+
+  enablePaste();
+  document.body.addEventListener("htmx:afterSwap", enablePaste);
+
   var now = document.querySelector(".now-divider");
   if (now && now.scrollIntoView) {
     var rect = now.getBoundingClientRect();
